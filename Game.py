@@ -19,16 +19,17 @@ class Game(IGame):
         self.board = Board(board_rows)
         self.selected = None
         self.pending_moves = []
+        self.is_game_over = False
 
     def handle_command(self, cmd):
         self.execute_pending_moves()
-        if cmd.startswith("click"):
+        if cmd == "print board":
+            self.board.print_board()
+        elif not self.is_game_over and cmd.startswith("click"):
             parts = cmd.split()
             x, y = int(parts[1]), int(parts[2])
             row, col = y // TILE_SIZE, x // TILE_SIZE
             self._handle_click(row, col)
-        elif cmd == "print board":
-            self.board.print_board()
 
     def _handle_click(self, row, col):
         if self.selected:
@@ -69,8 +70,14 @@ class Game(IGame):
                 self.selected = (row, col)
 
     def execute_pending_moves(self):
+        from constants import PieceType
         now = time.time()
         for move in self.pending_moves[:]:
             if now >= move.arrive_at:
+                target = self.board.get_piece(*move.end)
                 self.board.move_piece(move.start, move.end)
                 self.pending_moves.remove(move)
+                if target is not None and target.ptype == PieceType.KING:
+                    self.is_game_over = True
+                    self.pending_moves.clear()
+                    return

@@ -158,6 +158,50 @@ class TestRealTiming:
         assert game.board.get_piece(0, 1) is None
 
 
+BOARD_KING_CAPTURE = [
+    ['wR', '.', 'bK'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+]
+
+
+class TestGameOver:
+    def test_king_capture_sets_game_over(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command("click 50 50")   # select wR at (0,0)
+        game.handle_command("click 250 50")  # move wR to (0,2) — captures bK
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.is_game_over
+
+    def test_commands_rejected_after_game_over(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command("click 50 50")
+        game.handle_command("click 250 50")
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.is_game_over
+        game.handle_command("click 50 50")
+        assert game.selected is None
+        assert len(game.pending_moves) == 0
+
+    def test_pending_moves_cleared_on_game_over(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command("click 50 50")
+        game.handle_command("click 250 50")  # captures bK
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert len(game.pending_moves) == 0
+
+    def test_game_not_over_without_king_capture(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command("click 50 50")   # select wR
+        game.handle_command("click 150 50")  # move to (0,1) — no capture
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert not game.is_game_over
+
+
 class TestExecutePendingMoves:
     def test_move_executes_after_delay(self):
         game = make_game()
