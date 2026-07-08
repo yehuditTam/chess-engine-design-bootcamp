@@ -2,6 +2,7 @@ import sys
 import time
 from Game import Game
 from validators import validate_board
+from command_parser import parse
 
 
 def parse_input(lines):
@@ -34,7 +35,7 @@ def main():
         if cmd.startswith("wait"):
             time.sleep(int(cmd.split()[1]) / 1000.0)
         else:
-            game.handle_command(cmd)
+            game.handle_command(parse(cmd))
 
 if __name__ == "__main__":
     main()

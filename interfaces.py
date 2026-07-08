@@ -31,6 +31,9 @@ class IBoard(ABC):
     def move_piece(self, start, end): pass
 
     @abstractmethod
+    def remove_piece(self, row, col): pass
+
+    @abstractmethod
     def is_legal(self, start, end, piece) -> bool: pass
 
     @abstractmethod
@@ -39,7 +42,7 @@ class IBoard(ABC):
 
 class IGame(ABC):
     @abstractmethod
-    def handle_command(self, cmd: str): pass
+    def handle_command(self, cmd): pass
 
     @abstractmethod
     def execute_pending_moves(self): pass
