@@ -109,3 +109,30 @@ class TestPawnStrategy:
         s = PawnStrategy(Color.WHITE)
         friendly = make_piece(Color.WHITE, PieceType.PAWN)
         assert not s.is_legal((4,4), (3,5), friendly)
+
+    def test_pawn_double_move_from_start_white(self):
+        s = PawnStrategy(Color.WHITE, start_row=6, promotion_row=0)
+        assert s.is_legal((6,0), (4,0), None)
+
+    def test_pawn_double_move_from_start_black(self):
+        s = PawnStrategy(Color.BLACK, start_row=1, promotion_row=7)
+        assert s.is_legal((1,0), (3,0), None)
+
+    def test_pawn_double_move_not_from_start(self):
+        s = PawnStrategy(Color.WHITE, start_row=6, promotion_row=0)
+        assert not s.is_legal((5,0), (3,0), None)
+
+    def test_pawn_double_move_blocked(self):
+        s = PawnStrategy(Color.WHITE, start_row=6, promotion_row=0)
+        blocker = make_piece(Color.BLACK, PieceType.PAWN)
+        assert not s.is_legal((6,0), (4,0), blocker)
+
+    def test_pawn_requires_clear_path(self):
+        s = PawnStrategy(Color.WHITE)
+        assert s.requires_clear_path()
+
+
+class TestBishopRequiresClearPath:
+    def test_bishop_requires_clear_path(self):
+        from move_rules import BishopStrategy
+        assert BishopStrategy().requires_clear_path()

@@ -77,6 +77,11 @@ class Game(IGame):
                 target = self.board.get_piece(*move.end)
                 self.board.move_piece(move.start, move.end)
                 self.pending_moves.remove(move)
+                piece = self.board.get_piece(*move.end)
+                if piece is not None and piece.ptype == PieceType.PAWN:
+                    promotion_row = 0 if piece.color.value == 'w' else self.board.rows() - 1
+                    if move.end[0] == promotion_row:
+                        piece.promote()
                 if target is not None and target.ptype == PieceType.KING:
                     self.is_game_over = True
                     self.pending_moves.clear()

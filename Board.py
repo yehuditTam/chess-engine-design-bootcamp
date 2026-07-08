@@ -5,14 +5,19 @@ from exceptions import OutOfBoundsError, BlockedPathError, FriendlyFireError, In
 
 class Board(IBoard):
     def __init__(self, grid_strings):
-        self.grid = [[self._parse_piece(cell) for cell in row] for row in grid_strings]
+        num_rows = len(grid_strings)
+        self.grid = [
+            [self._parse_piece(cell, r, num_rows) for cell in row]
+            for r, row in enumerate(grid_strings)
+        ]
 
-    def _parse_piece(self, piece_str):
+    def _parse_piece(self, piece_str, row, num_rows):
         if piece_str == '.':
             return None
         color = Color(piece_str[0])
         ptype = PieceType(piece_str[1])
-        return Piece(color, ptype)
+        promotion_row = 0 if color == Color.WHITE else num_rows - 1
+        return Piece(color, ptype, start_row=row, promotion_row=promotion_row)
 
     def get_piece(self, row, col):
         return self.grid[row][col]

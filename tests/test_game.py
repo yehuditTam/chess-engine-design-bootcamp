@@ -103,6 +103,25 @@ class TestMoveScheduling:
         game.handle_command("click 150 650")  # try to switch to wP — now pending, should be blocked
         assert game.selected is None
 
+    def test_friendly_switch_to_pending_sets_selected_none(self):
+        # covers Game.py lines 40-41: else branch when friendly target is pending
+        game = make_game()
+        game.handle_command("click 150 650")  # select wP
+        game.handle_command("click 150 550")  # schedule wP to (5,1)
+        game.handle_command("click 150 750")  # select wK
+        game.handle_command("click 150 650")  # try friendly-switch to pending wP
+        assert game.selected is None
+
+    def test_redirect_attempt_while_selected_is_pending(self):
+        # covers Game.py lines 40-41: selected piece itself is already pending
+        game = make_game()
+        game.handle_command("click 150 650")  # select wP
+        game.handle_command("click 150 550")  # schedule wP to (5,1)
+        game.selected = (6, 1)               # force selected back to pending piece
+        game.handle_command("click 150 450")  # try to redirect — should hit lines 40-41
+        assert game.selected is None
+        assert game.pending_moves[0].end == (5, 1)
+
     def test_immediate_move_after_arrival(self):
         game = make_game()
         game.handle_command("click 150 650")  # select wP at (6,1)
@@ -163,6 +182,113 @@ BOARD_KING_CAPTURE = [
     ['.', '.', '.'],
     ['.', '.', '.'],
 ]
+
+
+BOARD_PAWN_DOUBLE = [
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['wP', '.', '.'],
+    ['.', '.', '.'],
+]
+
+BOARD_PAWN_PROMOTION = [
+    ['.', '.', '.'],
+    ['wP', '.', '.'],
+    ['.', '.', '.'],
+]
+
+
+class TestPawnRules:
+    def test_pawn_single_move(self):
+        game = Game(BOARD_PAWN_DOUBLE)
+        game.handle_command("click 50 650")   # select wP at (6,0)
+        game.handle_command("click 50 550")   # move to (5,0)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == (5, 0)
+
+    def test_pawn_double_move_from_start(self):
+        game = Game(BOARD_PAWN_DOUBLE)
+        game.handle_command("click 50 650")   # select wP at (6,0)
+        game.handle_command("click 50 450")   # move two squares to (4,0)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == (4, 0)
+
+    def test_pawn_double_move_blocked_by_piece(self):
+        board = [
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['bR', '.', '.'],
+            ['wP', '.', '.'],
+            ['.', '.', '.'],
+        ]
+        game = Game(board)
+        game.handle_command("click 50 650")   # select wP at (6,0)
+        game.handle_command("click 50 450")   # blocked by bR at (5,0)
+        assert len(game.pending_moves) == 0
+
+    def test_pawn_double_move_not_allowed_after_start(self):
+        game = Game(BOARD_PAWN_DOUBLE)
+        game.handle_command("click 50 650")   # select wP at (6,0)
+        game.handle_command("click 50 550")   # move to (5,0)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.handle_command("click 50 550")   # select wP now at (5,0)
+        game.handle_command("click 50 350")   # try double move from non-start row
+        assert len(game.pending_moves) == 0
+
+    def test_pawn_double_not_allowed_from_non_start_small_board(self):
+        # pawn at row 2 in 4-row board: start_row=2, but double move lands on promotion_row=0 -> blocked
+        board = [
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', 'wP', '.'],
+            ['.', '.', '.'],
+        ]
+        game = Game(board)
+        game.handle_command("click 150 250")  # select wP at (2,1)
+        game.handle_command("click 150 50")   # double move to (0,1) lands on promotion row
+        assert len(game.pending_moves) == 0
+
+    def test_pawn_double_allowed_on_small_board_start_row(self):
+        # pawn at row 3 in 4-row board: start_row=3, double move to row 1 (not promotion row)
+        board = [
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', 'wP', '.'],
+        ]
+        game = Game(board)
+        game.handle_command("click 150 350")  # select wP at (3,1)
+        game.handle_command("click 150 150")  # double move to (1,1)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == (1, 1)
+
+    def test_pawn_promotion_to_queen(self):
+        game = Game(BOARD_PAWN_PROMOTION)
+        game.handle_command("click 50 150")   # select wP at (1,0)
+        game.handle_command("click 50 50")    # move to (0,0) — promotion row
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        piece = game.board.get_piece(0, 0)
+        assert piece.ptype.value == 'Q'
+
+    def test_promoted_queen_can_move_diagonally(self):
+        game = Game(BOARD_PAWN_PROMOTION)
+        game.handle_command("click 50 150")   # select wP at (1,0)
+        game.handle_command("click 50 50")    # promote to queen at (0,0)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.handle_command("click 50 50")    # select queen at (0,0)
+        game.handle_command("click 150 150")  # move diagonally to (1,1)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == (1, 1)
 
 
 class TestGameOver:

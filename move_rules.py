@@ -57,17 +57,27 @@ class KnightStrategy(MoveStrategy):
 
 
 class PawnStrategy(MoveStrategy):
-    def __init__(self, color):
+    def __init__(self, color, start_row=None, promotion_row=None):
         from constants import Color
         self.color = color
         self.direction = -1 if color == Color.WHITE else 1
+        self.start_row = start_row
+        self.promotion_row = promotion_row
 
     def is_legal(self, start, end, target):
         r1, c1 = start
         r2, c2 = end
         dc = abs(c1 - c2)
-        if dc == 0 and (r2 - r1) == self.direction:
+        dr = r2 - r1
+        if dc == 0 and dr == self.direction:
             return target is None
-        if dc == 1 and (r2 - r1) == self.direction:
+        if (dc == 0 and dr == 2 * self.direction
+                and self.start_row is not None and r1 == self.start_row
+                and self.promotion_row is not None and r2 != self.promotion_row):
+            return target is None
+        if dc == 1 and dr == self.direction:
             return target is not None and target.color != self.color
         return False
+
+    def requires_clear_path(self):
+        return True

@@ -1,5 +1,7 @@
 import pytest
 from main import parse_input
+from unittest.mock import patch
+import io
 
 
 class TestParseInput:
@@ -36,3 +38,28 @@ class TestParseInput:
         board, cmds = parse_input([])
         assert board == []
         assert cmds == []
+
+
+class TestMain:
+    def _run_main(self, stdin_text):
+        from main import main
+        with patch("sys.stdin", io.StringIO(stdin_text)):
+            main()
+
+    def test_main_invalid_board_exits_early(self, capsys):
+        self._run_main("Board:\nxx .\nCommands:\nprint board\n")
+        out = capsys.readouterr().out
+        assert "wK" not in out
+
+    def test_main_print_board(self, capsys):
+        self._run_main("Board:\nwK .\n. bK\nCommands:\nprint board\n")
+        out = capsys.readouterr().out
+        assert "wK" in out
+
+    def test_main_wait_then_move(self, capsys):
+        self._run_main(
+            "Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nwait 1000\nprint board\n"
+        )
+        out = capsys.readouterr().out
+        assert ". . wR" in out
+
