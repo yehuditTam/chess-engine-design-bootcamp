@@ -367,3 +367,68 @@ class TestPrintBoard:
         game.handle_command("print board")
         output = capsys.readouterr().out.splitlines()
         assert output[6].split()[1] == 'wP'
+
+
+# Jump boards
+BOARD_JUMP = [
+    ['.', 'bR', '.'],
+    ['.', 'wR', '.'],
+    ['.', '.', '.'],
+]
+
+
+class TestJump:
+    def test_jump_schedules_pending_jump(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command("jump 150 150")  # jump wR at (1,1)
+        assert len(game.pending_jumps) == 1
+        assert game.pending_jumps[0].cell == (1, 1)
+
+    def test_airborne_piece_stays_on_cell(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command("jump 150 150")  # jump wR at (1,1)
+        assert game.board.get_piece(1, 1) is not None
+
+    def test_airborne_captures_arriving_enemy(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command("jump 150 150")   # wR at (1,1) jumps
+        game.handle_command("click 150 50")   # select bR at (0,1)
+        game.handle_command("click 150 150")  # move bR to (1,1)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.board.get_piece(1, 1) is not None
+        assert game.board.get_piece(1, 1).color.value == 'w'
+        assert game.board.get_piece(0, 1) is None
+
+    def test_no_enemy_arrives_piece_lands_normally(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command("jump 150 150")  # jump wR at (1,1)
+        game.pending_jumps[0].land_at = time.time() - 1
+        game.execute_pending_moves()
+        assert len(game.pending_jumps) == 0
+        assert game.board.get_piece(1, 1) is not None
+
+    def test_moving_piece_cannot_jump(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command("click 150 150")  # select wR at (1,1)
+        game.handle_command("click 150 250")  # schedule move to (2,1)
+        game.handle_command("jump 150 150")   # try to jump moving piece
+        assert len(game.pending_jumps) == 0
+
+    def test_cannot_jump_twice(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command("jump 150 150")
+        game.handle_command("jump 150 150")
+        assert len(game.pending_jumps) == 1
+
+    def test_friendly_arriving_piece_not_captured_by_airborne(self):
+        board = [
+            ['.', 'wB', '.'],
+            ['.', 'wR', '.'],
+            ['.', '.', '.'],
+        ]
+        game = Game(board)
+        game.handle_command("jump 150 150")   # wR at (1,1) jumps
+        game.handle_command("click 150 50")   # select wB at (0,1)
+        game.handle_command("click 150 150")  # attempt move to (1,1) — friendly fire, not scheduled
+        assert len(game.pending_moves) == 0
