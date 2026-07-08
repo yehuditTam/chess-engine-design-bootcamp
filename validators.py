@@ -1,17 +1,34 @@
+from dataclasses import dataclass, field
+from typing import Optional
 from constants import PieceType, Color
 
 _VALID_TOKENS = {c.value + p.value for c in Color for p in PieceType} | {'.'}
 
+
+@dataclass
+class ValidationError:
+    code: str
+    row: Optional[int] = field(default=None)
+    token: Optional[str] = field(default=None)
+
+    def __str__(self):
+        parts = [f"ERROR {self.code}"]
+        if self.row is not None:
+            parts.append(f"row={self.row}")
+        if self.token is not None:
+            parts.append(f"token={self.token}")
+        return " ".join(parts)
+
+
 def validate_board(board_rows):
     if not board_rows:
-        return False
+        return [ValidationError(code="EMPTY_BOARD")]
+    errors = []
     width = len(board_rows[0])
-    for row in board_rows:
+    for r, row in enumerate(board_rows):
         if len(row) != width:
-            print("ERROR ROW_WIDTH_MISMATCH")
-            return False
+            errors.append(ValidationError(code="ROW_WIDTH_MISMATCH", row=r))
         for token in row:
             if token not in _VALID_TOKENS:
-                print("ERROR UNKNOWN_TOKEN")
-                return False
-    return True
+                errors.append(ValidationError(code="UNKNOWN_TOKEN", row=r, token=token))
+    return errors

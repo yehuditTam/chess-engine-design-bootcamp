@@ -1,24 +1,10 @@
 import time
-from dataclasses import dataclass
-from typing import Tuple
 from Board import Board
 from commands import ClickCommand, JumpCommand, PrintBoardCommand
-from constants import TILE_SIZE, MOVE_DELAY_SECONDS, JUMP_DURATION_SECONDS, PieceType
+from constants import MOVE_DELAY_SECONDS, JUMP_DURATION_SECONDS, PieceType
 from interfaces import IGame
 from exceptions import InvalidMoveError
-
-
-@dataclass
-class PendingMove:
-    start: Tuple[int, int]
-    end: Tuple[int, int]
-    arrive_at: float
-
-
-@dataclass
-class PendingJump:
-    cell: Tuple[int, int]
-    land_at: float
+from pending import PendingMove, PendingJump
 
 
 class Game(IGame):

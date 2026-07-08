@@ -1,3 +1,4 @@
+# https://github.com/yehuditTam/chess-engine-design-bootcamp
 import sys
 import time
 from Game import Game
@@ -26,7 +27,10 @@ def parse_input(lines):
 def main():
     board_rows, commands = parse_input(sys.stdin.read().splitlines())
 
-    if not validate_board(board_rows):
+    errors = validate_board(board_rows)
+    if errors:
+        for error in errors:
+            print(error)
         return
 
     game = Game(board_rows)
