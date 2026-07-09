@@ -1,0 +1,477 @@
+import pytest
+import time
+from kungfu_chess.realtime.game_engine import GameEngine as Game
+from kungfu_chess.input.board_mapper import parse
+from kungfu_chess.model.position import Position
+
+
+def cmd(s):
+    return parse(s)
+
+
+def p(r, c):
+    return Position(r, c)
+
+
+BOARD = [
+    ['.', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', '.', '.', '.', '.', '.', '.', '.'],
+    ['.', 'wP', '.', '.', '.', '.', '.', '.'],
+    ['.', 'wK', '.', '.', '.', '.', '.', 'bK'],
+]
+
+
+def make_game():
+    return Game(BOARD)
+
+
+class TestClickSelection:
+    def test_click_piece_selects_it(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        assert game.selected == p(6, 1)
+
+    def test_click_empty_does_not_select(self):
+        game = make_game()
+        game.handle_command(cmd("click 350 350"))
+        assert game.selected is None
+
+    def test_click_out_of_bounds_ignored(self):
+        game = make_game()
+        game.handle_command(cmd("click 9999 9999"))
+        assert game.selected is None
+
+    def test_click_same_cell_deselects(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 650"))
+        assert game.selected == p(6, 1)
+
+    def test_click_friendly_switches_selection(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 750"))
+        assert game.selected == p(7, 1)
+
+
+class TestMoveScheduling:
+    def test_legal_move_adds_pending(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 550"))
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].start == p(6, 1)
+        assert game.pending_moves[0].end == p(5, 1)
+
+    def test_illegal_move_not_added(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 350"))
+        assert len(game.pending_moves) == 0
+
+    def test_cannot_queue_same_piece_twice(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 550"))
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 450"))
+        assert len(game.pending_moves) == 1
+
+    def test_cannot_redirect_moving_piece(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))  # select wP at (6,1)
+        game.handle_command(cmd("click 150 550"))  # move to (5,1)
+        game.handle_command(cmd("click 150 650"))  # try to select again — should be blocked
+        assert game.selected is None
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == p(5, 1)
+
+    def test_cannot_select_pending_piece_from_idle(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))  # select wP at (6,1)
+        game.handle_command(cmd("click 150 550"))  # move to (5,1) — now pending
+        game = Game(BOARD)                    # fresh game, same board state concept
+        # simulate directly: inject a pending move and try to select its start
+        game.handle_command(cmd("click 150 650"))  # select wP
+        game.handle_command(cmd("click 150 550"))  # schedule move
+        game.selected = None                  # reset selection manually
+        game.handle_command(cmd("click 150 650"))  # try to select the moving piece
+        assert game.selected is None
+
+    def test_pending_piece_not_selectable_as_friendly_switch(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 750"))  # select wK at (7,1)
+        game.handle_command(cmd("click 150 650"))  # try to switch to wP at (6,1) — wP not pending yet, should switch
+        assert game.selected == p(6, 1)
+        game.handle_command(cmd("click 150 550"))  # schedule wP move to (5,1)
+        game.selected = None
+        game.handle_command(cmd("click 150 750"))  # select wK
+        game.handle_command(cmd("click 150 650"))  # try to switch to wP — now pending, should be blocked
+        assert game.selected is None
+
+    def test_friendly_switch_to_pending_sets_selected_none(self):
+        # covers Game.py lines 40-41: else branch when friendly target is pending
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))  # select wP
+        game.handle_command(cmd("click 150 550"))  # schedule wP to (5,1)
+        game.handle_command(cmd("click 150 750"))  # select wK
+        game.handle_command(cmd("click 150 650"))  # try friendly-switch to pending wP
+        assert game.selected is None
+
+    def test_redirect_attempt_while_selected_is_pending(self):
+        # covers Game.py lines 40-41: selected piece itself is already pending
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))  # select wP
+        game.handle_command(cmd("click 150 550"))  # schedule wP to (5,1)
+        game.selected = p(6, 1)               # force selected back to pending piece
+        game.handle_command(cmd("click 150 450"))  # try to redirect — should hit lines 40-41
+        assert game.selected is None
+        assert game.pending_moves[0].end == p(5, 1)
+
+    def test_immediate_move_after_arrival(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))  # select wP at (6,1)
+        game.handle_command(cmd("click 150 550"))  # move to (5,1)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.handle_command(cmd("click 150 550"))  # select wP now at (5,1)
+        game.handle_command(cmd("click 150 450"))  # move to (4,1)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].start == p(5, 1)
+        assert game.pending_moves[0].end == p(4, 1)
+
+
+BOARD_ROOKS = [
+    ['wR', '.', '.'],
+    ['.', '.', '.'],
+    ['bR', '.', '.'],
+]
+
+
+class TestRealTiming:
+    def test_move_delay_within_1000ms(self):
+        game = Game(BOARD_ROOKS)
+        game.handle_command(cmd("click 50 50"))   # select wR at (0,0)
+        game.handle_command(cmd("click 250 50"))  # move wR to (0,2)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.board.get_piece(0, 2) is not None
+        assert game.board.get_piece(0, 0) is None
+
+    def test_opposite_colors_cannot_move_concurrently(self):
+        game = Game(BOARD_ROOKS)
+        game.handle_command(cmd("click 50 50"))    # select wR at (0,0)
+        game.handle_command(cmd("click 250 50"))   # move wR to (0,2) — pending
+        game.handle_command(cmd("click 50 250"))   # select bR at (2,0)
+        game.handle_command(cmd("click 250 250"))  # try to move bR — should be blocked
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.board.get_piece(0, 2) is not None  # wR arrived
+        assert game.board.get_piece(2, 0) is not None  # bR did NOT move
+        assert game.board.get_piece(2, 2) is None
+
+    def test_can_move_again_after_real_arrival(self):
+        game = Game(BOARD_ROOKS)
+        game.handle_command(cmd("click 50 50"))   # select wR at (0,0)
+        game.handle_command(cmd("click 150 50"))  # move wR to (0,1)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.handle_command(cmd("click 150 50"))  # select wR now at (0,1)
+        game.handle_command(cmd("click 250 50"))  # move wR to (0,2)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.board.get_piece(0, 2) is not None
+        assert game.board.get_piece(0, 1) is None
+
+
+BOARD_KING_CAPTURE = [
+    ['wR', '.', 'bK'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+]
+
+
+BOARD_PAWN_DOUBLE = [
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['.', '.', '.'],
+    ['wP', '.', '.'],
+    ['.', '.', '.'],
+]
+
+BOARD_PAWN_PROMOTION = [
+    ['.', '.', '.'],
+    ['wP', '.', '.'],
+    ['.', '.', '.'],
+]
+
+
+class TestPawnRules:
+    def test_pawn_single_move(self):
+        game = Game(BOARD_PAWN_DOUBLE)
+        game.handle_command(cmd("click 50 650"))   # select wP at (6,0)
+        game.handle_command(cmd("click 50 550"))   # move to (5,0)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == p(5, 0)
+
+    def test_pawn_double_move_from_start(self):
+        game = Game(BOARD_PAWN_DOUBLE)
+        game.handle_command(cmd("click 50 650"))   # select wP at (6,0)
+        game.handle_command(cmd("click 50 450"))   # move two squares to (4,0)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == p(4, 0)
+
+    def test_pawn_double_move_blocked_by_piece(self):
+        board = [
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['bR', '.', '.'],
+            ['wP', '.', '.'],
+            ['.', '.', '.'],
+        ]
+        game = Game(board)
+        game.handle_command(cmd("click 50 650"))   # select wP at (6,0)
+        game.handle_command(cmd("click 50 450"))   # blocked by bR at (5,0)
+        assert len(game.pending_moves) == 0
+
+    def test_pawn_double_move_not_allowed_after_start(self):
+        game = Game(BOARD_PAWN_DOUBLE)
+        game.handle_command(cmd("click 50 650"))   # select wP at (6,0)
+        game.handle_command(cmd("click 50 550"))   # move to (5,0)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.handle_command(cmd("click 50 550"))   # select wP now at (5,0)
+        game.handle_command(cmd("click 50 350"))   # try double move from non-start row
+        assert len(game.pending_moves) == 0
+
+    def test_pawn_double_not_allowed_from_non_start_small_board(self):
+        # pawn at row 2 in 4-row board: start_row=2, but double move lands on promotion_row=0 -> blocked
+        board = [
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', 'wP', '.'],
+            ['.', '.', '.'],
+        ]
+        game = Game(board)
+        game.handle_command(cmd("click 150 250"))  # select wP at (2,1)
+        game.handle_command(cmd("click 150 50"))   # double move to (0,1) lands on promotion row
+        assert len(game.pending_moves) == 0
+
+    def test_pawn_double_allowed_on_small_board_start_row(self):
+        # pawn at row 3 in 4-row board: start_row=3, double move to row 1 (not promotion row)
+        board = [
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', '.', '.'],
+            ['.', 'wP', '.'],
+        ]
+        game = Game(board)
+        game.handle_command(cmd("click 150 350"))  # select wP at (3,1)
+        game.handle_command(cmd("click 150 150"))  # double move to (1,1)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == p(1, 1)
+
+    def test_pawn_promotion_to_queen(self):
+        game = Game(BOARD_PAWN_PROMOTION)
+        game.handle_command(cmd("click 50 150"))   # select wP at (1,0)
+        game.handle_command(cmd("click 50 50"))    # move to (0,0) — promotion row
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        piece = game.board.get_piece(0, 0)
+        assert piece.ptype.value == 'Q'
+
+    def test_promoted_queen_can_move_diagonally(self):
+        game = Game(BOARD_PAWN_PROMOTION)
+        game.handle_command(cmd("click 50 150"))   # select wP at (1,0)
+        game.handle_command(cmd("click 50 50"))    # promote to queen at (0,0)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.handle_command(cmd("click 50 50"))    # select queen at (0,0)
+        game.handle_command(cmd("click 150 150"))  # move diagonally to (1,1)
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == p(1, 1)
+
+
+class TestGameOver:
+    def test_king_capture_sets_game_over(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command(cmd("click 50 50"))   # select wR at (0,0)
+        game.handle_command(cmd("click 250 50"))  # move wR to (0,2) — captures bK
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.is_game_over
+
+    def test_commands_rejected_after_game_over(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command(cmd("click 50 50"))
+        game.handle_command(cmd("click 250 50"))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.is_game_over
+        game.handle_command(cmd("click 50 50"))
+        assert game.selected is None
+        assert len(game.pending_moves) == 0
+
+    def test_pending_moves_cleared_on_game_over(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command(cmd("click 50 50"))
+        game.handle_command(cmd("click 250 50"))  # captures bK
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert len(game.pending_moves) == 0
+
+    def test_game_not_over_without_king_capture(self):
+        game = Game(BOARD_KING_CAPTURE)
+        game.handle_command(cmd("click 50 50"))   # select wR
+        game.handle_command(cmd("click 150 50"))  # move to (0,1) — no capture
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert not game.is_game_over
+
+
+class TestExecutePendingMoves:
+    def test_move_executes_after_delay(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 550"))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.board.get_piece(5, 1) is not None
+        assert game.board.get_piece(6, 1) is None
+
+    def test_move_not_executed_before_delay(self):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 550"))
+        game.pending_moves[0].arrive_at = time.time() + 999
+        game.execute_pending_moves()
+        assert game.board.get_piece(6, 1) is not None
+        assert game.board.get_piece(5, 1) is None
+
+
+class TestPrintBoard:
+    def test_print_board_executes_ready_moves(self, capsys):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 550"))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.handle_command(cmd("print board"))
+        output = capsys.readouterr().out.splitlines()
+        assert output[5].split()[1] == 'wP'
+        assert output[6].split()[1] == '.'
+
+    def test_print_board_does_not_execute_future_moves(self, capsys):
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))
+        game.handle_command(cmd("click 150 550"))
+        game.pending_moves[0].arrive_at = time.time() + 999
+        game.handle_command(cmd("print board"))
+        output = capsys.readouterr().out.splitlines()
+        assert output[6].split()[1] == 'wP'
+
+
+# Jump boards
+BOARD_JUMP = [
+    ['.', 'bR', '.'],
+    ['.', 'wR', '.'],
+    ['.', '.', '.'],
+]
+
+
+class TestJump:
+    def test_jump_schedules_pending_jump(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command(cmd("jump 150 150"))  # jump wR at (1,1)
+        assert len(game.pending_jumps) == 1
+        assert game.pending_jumps[0].cell == p(1, 1)
+
+    def test_airborne_piece_stays_on_cell(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command(cmd("jump 150 150"))  # jump wR at (1,1)
+        assert game.board.get_piece(1, 1) is not None
+
+    def test_airborne_captures_arriving_enemy(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command(cmd("jump 150 150"))   # wR at (1,1) jumps
+        game.handle_command(cmd("click 150 50"))   # select bR at (0,1)
+        game.handle_command(cmd("click 150 150"))  # move bR to (1,1)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert game.board.get_piece(1, 1) is not None
+        assert game.board.get_piece(1, 1).color.value == 'w'
+        assert game.board.get_piece(0, 1) is None
+
+    def test_no_enemy_arrives_piece_lands_normally(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command(cmd("jump 150 150"))  # jump wR at (1,1)
+        game.pending_jumps[0].land_at = time.time() - 1
+        game.execute_pending_moves()
+        assert len(game.pending_jumps) == 0
+        assert game.board.get_piece(1, 1) is not None
+
+    def test_moving_piece_cannot_jump(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command(cmd("click 150 150"))  # select wR at (1,1)
+        game.handle_command(cmd("click 150 250"))  # schedule move to (2,1)
+        game.handle_command(cmd("jump 150 150"))   # try to jump moving piece
+        assert len(game.pending_jumps) == 0
+
+    def test_cannot_jump_twice(self):
+        game = Game(BOARD_JUMP)
+        game.handle_command(cmd("jump 150 150"))
+        game.handle_command(cmd("jump 150 150"))
+        assert len(game.pending_jumps) == 1
+
+    def test_friendly_arriving_piece_not_captured_by_airborne(self):
+        board = [
+            ['.', 'wB', '.'],
+            ['.', 'wR', '.'],
+            ['.', '.', '.'],
+        ]
+        game = Game(board)
+        game.handle_command(cmd("jump 150 150"))   # wR at (1,1) jumps
+        game.handle_command(cmd("click 150 50"))   # select wB at (0,1)
+        game.handle_command(cmd("click 150 150"))  # attempt move to (1,1) — friendly fire, not scheduled
+        assert len(game.pending_moves) == 0
+
+    def test_black_piece_can_jump(self):
+        board = [
+            ['.', '.', '.'],
+            ['.', 'bR', '.'],
+            ['.', 'wR', '.'],
+        ]
+        game = Game(board)
+        game.handle_command(cmd("jump 150 150"))  # jump bR at (1,1)
+        assert len(game.pending_jumps) == 1
+        assert game.pending_jumps[0].cell == p(1, 1)
+
+
+class TestGetSnapshot:
+    def test_get_snapshot_reflects_board(self):
+        from kungfu_chess.shared.dto import PieceSnapshot
+        from kungfu_chess.shared.constants import PieceType, Color
+        game = make_game()
+        snap = game.get_snapshot()
+        assert snap.get(7, 1) == PieceSnapshot(Color.WHITE, PieceType.KING)
+
+    def test_get_snapshot_after_move(self):
+        from kungfu_chess.shared.dto import PieceSnapshot
+        from kungfu_chess.shared.constants import PieceType, Color
+        game = make_game()
+        game.handle_command(cmd("click 150 650"))  # select wP at (6,1)
+        game.handle_command(cmd("click 150 550"))  # move to (5,1)
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        snap = game.get_snapshot()
+        assert snap.get(5, 1) == PieceSnapshot(Color.WHITE, PieceType.PAWN)
+        assert snap.get(6, 1) is None
