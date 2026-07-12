@@ -45,9 +45,6 @@ class IBoard(ABC):
 
 class IGame(ABC):
     @abstractmethod
-    def handle_command(self, cmd): pass
-
-    @abstractmethod
     def execute_pending_moves(self): pass
 
     @abstractmethod

@@ -1,6 +1,12 @@
 from kungfu_chess.shared.constants import PieceType, PieceState
 from kungfu_chess.shared.interfaces import IPiece
 
+# Piece holds identity (color, type) and delegates all movement logic to its
+# move_strategy (Strategy pattern). Piece itself has no knowledge of board size,
+# coordinates, or timing.
+# state is a lifecycle flag only (IDLE / MOVING / CAPTURED) — it is set by
+# RealTimeArbiter, never by Piece itself, to keep timing logic in one place.
+
 
 class Piece(IPiece):
     def __init__(self, color, ptype, move_strategy):
@@ -20,16 +26,14 @@ class Piece(IPiece):
     def set_state(self, state) -> None:
         self.state = state
 
-    def promote(self):
-        from kungfu_chess.rules.piece_rules import QueenStrategy
+    def promote(self, strategy):
         self._ptype = PieceType.QUEEN
-        self.move_strategy = QueenStrategy()
+        self.move_strategy = strategy
 
     def should_promote(self, row):
-        from kungfu_chess.rules.piece_rules import PawnStrategy
         return (
             self._ptype == PieceType.PAWN
-            and isinstance(self.move_strategy, PawnStrategy)
+            and hasattr(self.move_strategy, 'promotion_row')
             and self.move_strategy.promotion_row == row
         )
 

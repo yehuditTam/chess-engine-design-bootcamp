@@ -1,5 +1,5 @@
 import pytest
-from kungfu_chess.input.controller import parse_input
+from kungfu_chess.io.board_parser import parse_input
 from unittest.mock import patch
 import io
 
@@ -58,7 +58,7 @@ class TestMain:
 
     def test_main_wait_then_move(self, capsys):
         self._run_main(
-            "Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nwait 1000\nprint board\n"
+            "Board:\nwR . .\nCommands:\nclick 50 50\nclick 250 50\nwait 2000\nprint board\n"
         )
         out = capsys.readouterr().out
         assert ". . wR" in out

@@ -6,6 +6,7 @@ from kungfu_chess.rules.piece_rules import (
 )
 from kungfu_chess.shared.interfaces import IBoard
 from kungfu_chess.shared.dto import PieceSnapshot, BoardSnapshot
+from kungfu_chess.shared.exceptions import InvalidMoveError
 
 _STRATEGY_MAP = {
     PieceType.KING:   lambda color, start_row, promotion_row: KingStrategy(),
@@ -31,7 +32,8 @@ class Board(IBoard):
         color = Color(piece_str[0])
         ptype = PieceType(piece_str[1])
         promotion_row = 0 if color == Color.WHITE else num_rows - 1
-        strategy = _STRATEGY_MAP[ptype](color, row, promotion_row)
+        start_row = num_rows - 2 if color == Color.WHITE else 1
+        strategy = _STRATEGY_MAP[ptype](color, start_row, promotion_row)
         return Piece(color, ptype, move_strategy=strategy)
 
     def get_piece(self, row, col):
@@ -43,7 +45,12 @@ class Board(IBoard):
     def cols(self):
         return len(self.grid[0])
 
+    def in_bounds(self, row, col) -> bool:
+        return 0 <= row < self.rows() and 0 <= col < self.cols()
+
     def add_piece(self, row, col, piece):
+        if self.grid[row][col] is not None:
+            raise InvalidMoveError(f"Cell ({row}, {col}) is already occupied")
         self.grid[row][col] = piece
 
     def move_piece(self, start, end):

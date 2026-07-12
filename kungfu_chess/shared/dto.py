@@ -17,3 +17,9 @@ class BoardSnapshot:
 
     def get(self, row, col) -> Optional[PieceSnapshot]:
         return self.grid[row][col]
+
+
+@dataclass(frozen=True)
+class MoveResult:
+    ok: bool
+    reason: str = ""

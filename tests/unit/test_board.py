@@ -35,7 +35,39 @@ class TestBoardParsing:
                          PieceType.BISHOP, PieceType.KNIGHT, PieceType.PAWN]
 
 
-class TestMovePiece:
+class TestGetPiece:
+    def test_empty_cell_returns_none(self):
+        board = make_board(SIMPLE_BOARD)
+        assert board.get_piece(0, 0) is None
+
+    def test_occupied_cell_returns_correct_piece(self):
+        board = make_board(SIMPLE_BOARD)
+        piece = board.get_piece(1, 1)
+        assert piece.color == Color.WHITE
+        assert piece.ptype == PieceType.ROOK
+
+
+class TestRemovePiece:
+    def test_remove_clears_cell(self):
+        board = make_board(SIMPLE_BOARD)
+        board.remove_piece(1, 1)
+        assert board.get_piece(1, 1) is None
+
+
+class TestInBounds:
+    def test_valid_cell_is_in_bounds(self):
+        board = make_board(SIMPLE_BOARD)
+        assert board.in_bounds(0, 0) is True
+        assert board.in_bounds(3, 3) is True
+
+    def test_out_of_bounds_cells(self):
+        board = make_board(SIMPLE_BOARD)
+        assert board.in_bounds(-1, 0) is False
+        assert board.in_bounds(0, 4) is False
+        assert board.in_bounds(4, 0) is False
+
+
+
     def test_piece_moves_to_target(self):
         board = make_board(SIMPLE_BOARD)
         board.move_piece((1,1), (1,3))
@@ -87,11 +119,11 @@ class TestAddPiece:
         board.add_piece(0, 0, p)
         assert board.get_piece(0, 0) is p
 
-    def test_add_piece_overwrites_existing(self):
+    def test_add_piece_to_occupied_cell_raises(self):
         board = make_board([['wR', '.']])
         from kungfu_chess.model.piece import Piece
         from kungfu_chess.rules.piece_rules import QueenStrategy
+        from kungfu_chess.shared.exceptions import InvalidMoveError
         p = Piece(Color.BLACK, PieceType.QUEEN, move_strategy=QueenStrategy())
-        board.add_piece(0, 0, p)
-        assert board.get_piece(0, 0).color == Color.BLACK
-        assert board.get_piece(0, 0).ptype == PieceType.QUEEN
+        with pytest.raises(InvalidMoveError):
+            board.add_piece(0, 0, p)

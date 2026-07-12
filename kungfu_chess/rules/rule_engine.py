@@ -1,5 +1,10 @@
-from kungfu_chess.shared.exceptions import OutOfBoundsError, BlockedPathError, FriendlyFireError, InvalidMoveError
 from kungfu_chess.model.position import Position
+from kungfu_chess.shared.exceptions import OutOfBoundsError, BlockedPathError, FriendlyFireError, InvalidMoveError
+
+# Design Pattern: Validation Service
+# RuleEngine is a stateless, read-only service. It never mutates the board.
+# GameEngine owns the RuleEngine instance and calls it before scheduling any move.
+# Keeping validation separate from Board means Board stays a pure data store.
 
 
 class RuleEngine:
@@ -19,15 +24,10 @@ class RuleEngine:
         return True
 
     def _is_path_clear(self, start: Position, end: Position, pending_starts=()):
-        dr, dc = self._direction(start, end)
+        dr, dc = start.direction_to(end)
         curr = Position(start.row + dr, start.col + dc)
         while curr != end:
             if self._board.get_piece(*curr) is not None and curr not in pending_starts:
                 return False
             curr = Position(curr.row + dr, curr.col + dc)
         return True
-
-    def _direction(self, start: Position, end: Position):
-        dr = 0 if start.row == end.row else (1 if end.row > start.row else -1)
-        dc = 0 if start.col == end.col else (1 if end.col > start.col else -1)
-        return dr, dc
