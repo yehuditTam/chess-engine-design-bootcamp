@@ -81,6 +81,25 @@ class TestSelection:
         assert ctrl.selected is None
 
 
+class TestJumpCommand:
+    def test_jump_command_schedules_jump(self):
+        from kungfu_chess.input.commands import JumpCommand
+        ctrl, game = make_controller(BOARD_ROOKS)
+        ctrl.handle_command(JumpCommand(0, 0))
+        assert len(game.pending_jumps) == 1
+        assert game.pending_jumps[0].cell == p(0, 0)
+
+    def test_jump_command_ignored_when_game_over(self):
+        from kungfu_chess.input.commands import JumpCommand
+        board = [['wR', '.', 'bK']]
+        ctrl, game = make_controller(board)
+        game.request_move(p(0, 0), p(0, 2))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        ctrl.handle_command(JumpCommand(0, 2))
+        assert len(game.pending_jumps) == 0
+
+
 class TestMoveScheduling:
     def test_legal_move_schedules_pending(self):
         ctrl, game = make_controller(BOARD_ROOKS)
@@ -116,3 +135,22 @@ class TestMoveScheduling:
         ctrl.handle_click(p(0, 2))
         assert len(game.pending_moves) == 1
         assert game.pending_moves[0].start == p(0, 1)
+
+
+class TestMain:
+    def test_main_runs_and_prints(self, capsys, monkeypatch):
+        import sys
+        from kungfu_chess.input.controller import main
+        board_input = "Board:\nwR . .\n. . .\nbK . .\nCommands:\nprint board\n"
+        monkeypatch.setattr(sys, 'stdin', __import__('io').StringIO(board_input))
+        main()
+        out = capsys.readouterr().out
+        assert 'wR' in out
+
+    def test_main_prints_error_on_invalid_board(self, capsys, monkeypatch):
+        import sys
+        from kungfu_chess.input.controller import main
+        monkeypatch.setattr(sys, 'stdin', __import__('io').StringIO("xx yy\nPRINT\n"))
+        main()
+        out = capsys.readouterr().out
+        assert out.startswith("ERROR")

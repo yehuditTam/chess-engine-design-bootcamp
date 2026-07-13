@@ -291,6 +291,93 @@ class TestJump:
         assert game.pending_jumps[0].cell == p(1, 1)
 
 
+class TestAdvanceTime:
+    def test_advance_time_shifts_jump_land_at(self):
+        game = Game(BOARD_JUMP)
+        game.handle_jump(p(1, 1))
+        land_at_before = game.pending_jumps[0].land_at
+        game.advance_time(500)
+        assert game.pending_jumps[0].land_at == pytest.approx(land_at_before - 0.5, abs=0.01)
+
+
+class TestResolveEdgeCases:
+    def test_moving_piece_removed_from_board_is_cancelled(self):
+        # piece disappears mid-flight (e.g. captured by jump) — move should be silently dropped
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 2))
+        game.board.remove_piece(0, 0)  # simulate piece vanishing
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert len(game.pending_moves) == 0
+
+    def test_friendly_piece_at_destination_cancels_move(self):
+        # inject two moves manually to bypass schedule_move blocking logic
+        # wB arrives at col=1 first; wR arrives second and finds a friendly there
+        from kungfu_chess.realtime.motion import PendingMove
+        board = [['wR', '.', 'wB']]
+        game = Game(board)
+        now = time.time()
+        game.pending_moves.append(PendingMove(p(0, 2), p(0, 1), now - 2))  # wB first
+        game.pending_moves.append(PendingMove(p(0, 0), p(0, 1), now - 1))  # wR second
+        game.execute_pending_moves()
+        assert game.board.get_piece(0, 0) is not None  # wR stayed
+        assert game.board.get_piece(0, 1) is not None  # wB is there
+
+    def test_non_king_capture_does_not_end_game(self):
+        board = [['wR', 'bR']]
+        game = Game(board)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert not game.is_game_over
+        assert game.board.get_piece(0, 1) is not None
+
+    def test_piece_blocked_at_first_square_stays_put(self):
+        # wQ moves right col=1->col=2 (arrives col=2 after 1s)
+        # wR moves right col=0->col=2 (arrives col=2 after 2s) — wQ blocks col=2, wR stops at col=1
+        board = [['wR', 'wQ', '.']]
+        game = Game(board)
+        game.request_move(p(0, 1), p(0, 2))  # wQ -> col=2 after 1s
+        game.request_move(p(0, 0), p(0, 2))  # wR -> col=2 after 2s, blocked by wQ
+        rook_move = next(m for m in game.pending_moves if m.start == p(0, 0))
+        assert rook_move.end == p(0, 1)
+
+    def test_piece_blocked_immediately_stays_at_start(self):
+        # wR at col=0 wants to move to col=1, but wQ is already heading to col=1 and arrives first
+        # wR's first (and only) step is blocked — actual_end falls back to start
+        board = [['wR', '.', 'wQ']]
+        game = Game(board)
+        game.request_move(p(0, 2), p(0, 1))  # wQ -> col=1 after 1s
+        game.request_move(p(0, 0), p(0, 1))  # wR -> col=1 after 1s, same arrival — blocked
+        rook_move = next(m for m in game.pending_moves if m.start == p(0, 0))
+        assert rook_move.end == p(0, 0)
+
+
+class TestFriendlyBlockingPath:
+    def test_piece_stops_before_friendly_destination(self):
+        # Queen at (4,3) moves right to (4,5) — arrives at (4,4) after 1s
+        # Rook at (7,4) moves up to (0,4) — arrives at (4,4) after 3s
+        # Queen arrives at (4,4) before Rook, so Rook should stop at (5,4)
+        board = [
+            ['.', '.', '.', '.', '.', '.', '.', '.'],
+            ['.', '.', '.', '.', '.', '.', '.', '.'],
+            ['.', '.', '.', '.', '.', '.', '.', '.'],
+            ['.', '.', '.', '.', '.', '.', '.', '.'],
+            ['.', '.', '.', 'wQ', '.', '.', '.', '.'],
+            ['.', '.', '.', '.', '.', '.', '.', '.'],
+            ['.', '.', '.', '.', '.', '.', '.', '.'],
+            ['.', '.', '.', '.', 'wR', '.', '.', '.'],
+        ]
+        game = Game(board)
+        # Queen: (4,3)->(4,5), passes (4,4) after 1 step
+        game.request_move(p(4, 3), p(4, 5))
+        # Rook: (7,4)->(0,4), reaches (4,4) after 3 steps
+        game.request_move(p(7, 4), p(0, 4))
+        rook_move = next(m for m in game.pending_moves if m.start == p(7, 4))
+        # Rook should stop at (5,4), one step before (4,4)
+        assert rook_move.end == p(5, 4)
+
+
 class TestGetSnapshot:
     def test_get_snapshot_reflects_board(self):
         from kungfu_chess.shared.dto import PieceSnapshot

@@ -36,8 +36,45 @@ class RealTimeArbiter:
         piece = self._board.get_piece(*start)
         if piece is not None:
             piece.set_state(PieceState.MOVING)
-        steps = max(abs(end.row - start.row), abs(end.col - start.col))
-        self.pending_moves.append(PendingMove(start, end, time.time() + steps * MOVE_DELAY_SECONDS))
+        now = time.time()
+        dr, dc = start.direction_to(end)
+        curr = Position(start.row + dr, start.col + dc)
+        step = 1
+        actual_end = end
+        while True:
+            arrive_here = now + step * MOVE_DELAY_SECONDS
+            for other in self.pending_moves:
+                other_piece = self._board.get_piece(*other.start)
+                if other_piece is None or other_piece.color != piece.color:
+                    continue
+                if self._other_occupies_at(other, curr, arrive_here, now):
+                    prev = Position(curr.row - dr, curr.col - dc)
+                    actual_end = prev if prev != start else start
+                    break
+            else:
+                if curr == end:
+                    break
+                curr = Position(curr.row + dr, curr.col + dc)
+                step += 1
+                continue
+            break
+        steps = max(abs(actual_end.row - start.row), abs(actual_end.col - start.col))
+        self.pending_moves.append(PendingMove(start, actual_end, now + steps * MOVE_DELAY_SECONDS))
+
+    def _other_occupies_at(self, other: PendingMove, cell: Position, arrive_here: float, now: float) -> bool:
+        """Returns True if `other` will occupy `cell` by the time `arrive_here`."""
+        odr, odc = other.start.direction_to(other.end)
+        ocurr = Position(other.start.row + odr, other.start.col + odc)
+        ostep = 1
+        while True:
+            o_arrive = now + ostep * MOVE_DELAY_SECONDS
+            if ocurr == cell and o_arrive <= arrive_here:
+                return True
+            if ocurr == other.end:
+                break
+            ocurr = Position(ocurr.row + odr, ocurr.col + odc)
+            ostep += 1
+        return False
 
     def schedule_jump(self, cell):
         self.pending_jumps.append(PendingJump(cell, time.time() + JUMP_DURATION_SECONDS))
@@ -48,7 +85,7 @@ class RealTimeArbiter:
     def execute_pending_moves(self):
         now = time.time()
         arrived_ends = []
-        for move in self.pending_moves[:]:
+        for move in sorted(self.pending_moves, key=lambda m: m.arrive_at):
             if now >= move.arrive_at:
                 game_over_target, end = self._resolve_move(move)
                 if end is not None:

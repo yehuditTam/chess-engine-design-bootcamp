@@ -53,12 +53,13 @@ class Controller:
 
 
 def main():
+    from kungfu_chess.io.board_parser import TextInputParser
     from kungfu_chess.engine.game_engine import GameEngine
     from kungfu_chess.shared.validators import validate_board
     from kungfu_chess.input.board_mapper import parse
-    from kungfu_chess.io.board_parser import parse_input
 
-    board_rows, commands = parse_input(sys.stdin.read().splitlines())
+    parser = TextInputParser()
+    board_rows, commands = parser.parse(sys.stdin.read())
 
     errors = validate_board(board_rows)
     if errors:

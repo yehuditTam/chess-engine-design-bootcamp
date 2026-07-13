@@ -1,3 +1,6 @@
+from kungfu_chess.shared.interfaces import IInputParser
+
+
 def parse_input(lines):
     """Splits raw input lines into board rows and command strings."""
     board_rows, commands = [], []
@@ -15,3 +18,8 @@ def parse_input(lines):
         elif not parsing_board and line:
             commands.append(line)
     return board_rows, commands
+
+
+class TextInputParser(IInputParser):
+    def parse(self, raw: str) -> tuple:
+        return parse_input(raw.splitlines())

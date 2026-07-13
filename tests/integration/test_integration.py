@@ -19,6 +19,20 @@ class TestInvalidMoves:
         assert rows[3][1] == "."
 
 
+class TestRunnerValidation:
+    def test_invalid_board_returns_error(self):
+        import tempfile, os
+        content = "xx yy\nPRINT\n"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kfc', delete=False) as f:
+            f.write(content)
+            path = f.name
+        try:
+            output = run_kfc(path)
+            assert output.startswith("ERROR")
+        finally:
+            os.unlink(path)
+
+
 class TestCapture:
     def test_rook_captures_enemy_rook_and_king(self):
         output = run_kfc(kfc("05_capture.kfc"))

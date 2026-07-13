@@ -40,6 +40,19 @@ class TestParseInput:
         assert cmds == []
 
 
+class TestBoardMapper:
+    def test_jump_command_parsed(self):
+        from kungfu_chess.input.board_mapper import parse
+        from kungfu_chess.input.commands import JumpCommand
+        cmd = parse("jump 100 200")
+        assert isinstance(cmd, JumpCommand)
+
+    def test_unknown_command_raises(self):
+        from kungfu_chess.input.board_mapper import parse
+        with pytest.raises(ValueError):
+            parse("fly 100 200")
+
+
 class TestMain:
     def _run_main(self, stdin_text):
         from kungfu_chess.input.controller import main

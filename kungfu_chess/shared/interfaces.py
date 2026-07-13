@@ -49,3 +49,9 @@ class IGame(ABC):
 
     @abstractmethod
     def get_snapshot(self): pass
+
+
+class IInputParser(ABC):
+    @abstractmethod
+    def parse(self, raw: str) -> tuple: pass
+    """Returns (board_rows, commands)"""
