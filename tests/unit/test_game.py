@@ -140,6 +140,8 @@ class TestExecutePendingMoves:
         game.request_move(p(0, 0), p(0, 1))
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = time.time() - 1
+        game.execute_pending_moves()
         game.request_move(p(0, 1), p(0, 2))
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
@@ -221,6 +223,8 @@ class TestPawnRules:
         game.request_move(p(1, 0), p(0, 0))
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = time.time() - 1
+        game.execute_pending_moves()
         result = game.request_move(p(0, 0), p(1, 1))
         assert result.ok
 
@@ -291,13 +295,82 @@ class TestJump:
         assert game.pending_jumps[0].cell == p(1, 1)
 
 
+class TestCooldown:
+    def test_piece_is_cooling_after_arrival(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        from kungfu_chess.shared.constants import PieceState
+        assert game.board.get_piece(0, 1).state == PieceState.COOLING
+        assert len(game.pending_cooldowns) == 1
+
+    def test_cooling_piece_cannot_move(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        result = game.request_move(p(0, 1), p(0, 2))
+        assert not result.ok
+        assert result.reason == "invalid_move"
+
+    def test_piece_idle_after_cooldown_expires(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = time.time() - 1
+        game.execute_pending_moves()
+        from kungfu_chess.shared.constants import PieceState
+        assert game.board.get_piece(0, 1).state == PieceState.IDLE
+        assert len(game.pending_cooldowns) == 0
+
+    def test_piece_can_move_after_cooldown(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = time.time() - 1
+        game.execute_pending_moves()
+        result = game.request_move(p(0, 1), p(0, 2))
+        assert result.ok
+
+    def test_snapshot_shows_is_cooling(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        snap = game.get_snapshot()
+        assert snap.get(0, 1).is_cooling is True
+
+    def test_snapshot_not_cooling_after_expiry(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = time.time() - 1
+        game.execute_pending_moves()
+        snap = game.get_snapshot()
+        assert snap.get(0, 1).is_cooling is False
+
+    def test_advance_time_expires_cooldown(self):
+        from kungfu_chess.shared.constants import COOLDOWN_SECONDS
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game.advance_time(int(COOLDOWN_SECONDS * 1000) + 100)
+        game.execute_pending_moves()
+        assert len(game.pending_cooldowns) == 0
+
+
 class TestAdvanceTime:
     def test_advance_time_shifts_jump_land_at(self):
         game = Game(BOARD_JUMP)
         game.handle_jump(p(1, 1))
         land_at_before = game.pending_jumps[0].land_at
         game.advance_time(500)
-        assert game.pending_jumps[0].land_at == pytest.approx(land_at_before - 0.5, abs=0.01)
+        assert game.pending_jumps[0].land_at == pytest.approx(land_at_before, abs=0.01)
 
 
 class TestResolveEdgeCases:
@@ -394,7 +467,7 @@ class TestGetSnapshot:
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
         snap = game.get_snapshot()
-        assert snap.get(5, 1) == PieceSnapshot(Color.WHITE, PieceType.PAWN)
+        assert snap.get(5, 1) == PieceSnapshot(Color.WHITE, PieceType.PAWN, True)
         assert snap.get(6, 1) is None
 
 

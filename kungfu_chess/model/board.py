@@ -1,4 +1,5 @@
 from kungfu_chess.shared.constants import PieceType, Color
+from kungfu_chess.shared.constants import PieceState
 from kungfu_chess.model.piece import Piece
 from kungfu_chess.rules.piece_rules import (
     KingStrategy, RookStrategy, BishopStrategy,
@@ -65,7 +66,7 @@ class Board(IBoard):
     def snapshot(self) -> BoardSnapshot:
         grid = tuple(
             tuple(
-                PieceSnapshot(p.color, p.ptype) if p else None
+                PieceSnapshot(p.color, p.ptype, p.state == PieceState.COOLING) if p else None
                 for p in row
             )
             for row in self.grid

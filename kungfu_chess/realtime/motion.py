@@ -13,3 +13,9 @@ class PendingMove:
 class PendingJump:
     cell: Position
     land_at: float
+
+
+@dataclass
+class PendingCooldown:
+    cell: Position
+    ready_at: float

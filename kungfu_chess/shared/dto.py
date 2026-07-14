@@ -7,6 +7,7 @@ from kungfu_chess.shared.constants import PieceType, Color
 class PieceSnapshot:
     color: Color
     ptype: PieceType
+    is_cooling: bool = False
 
 
 @dataclass(frozen=True)

@@ -131,6 +131,8 @@ class TestMoveScheduling:
         ctrl.handle_click(p(0, 1))
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = time.time() - 1
+        game.execute_pending_moves()
         ctrl.handle_click(p(0, 1))
         ctrl.handle_click(p(0, 2))
         assert len(game.pending_moves) == 1

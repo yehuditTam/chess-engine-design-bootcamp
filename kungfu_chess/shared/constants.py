@@ -2,6 +2,7 @@ from enum import Enum
 
 MOVE_DELAY_SECONDS = 1.0
 JUMP_DURATION_SECONDS = 1.0
+COOLDOWN_SECONDS = 2.0
 
 class PieceType(Enum):
     KING = 'K'
@@ -19,3 +20,4 @@ class PieceState(Enum):
     IDLE = 'idle'
     MOVING = 'moving'
     CAPTURED = 'captured'
+    COOLING = 'cooling'

@@ -60,6 +60,7 @@ class GameEngine(IGame):
             self._board.in_bounds(pos.row, pos.col)
             and self._board.get_piece(*pos) is not None
             and not self._arbiter.is_pending(pos)
+            and not self._arbiter.is_cooling(pos)
         )
 
     # --- private ---
@@ -73,6 +74,8 @@ class GameEngine(IGame):
     def _try_move(self, start: Position, end: Position):
         if self._arbiter.is_pending(start):
             raise InvalidMoveError(f"{start} is already pending")
+        if self._arbiter.is_cooling(start):
+            raise InvalidMoveError(f"{start} is cooling down")
         target = self._board.get_piece(*end)
         piece = self._board.get_piece(*start)
         if target is not None and target.color == piece.color:
@@ -87,6 +90,10 @@ class GameEngine(IGame):
             self._arbiter.schedule_move(start, end)
 
     # expose arbiter internals for tests
+    @property
+    def pending_cooldowns(self):
+        return self._arbiter.pending_cooldowns
+
     @property
     def pending_moves(self):
         return self._arbiter.pending_moves

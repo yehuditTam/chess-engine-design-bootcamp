@@ -1,6 +1,6 @@
 import time
-from kungfu_chess.realtime.motion import PendingMove, PendingJump
-from kungfu_chess.shared.constants import JUMP_DURATION_SECONDS, MOVE_DELAY_SECONDS, PieceType, PieceState
+from kungfu_chess.realtime.motion import PendingMove, PendingJump, PendingCooldown
+from kungfu_chess.shared.constants import JUMP_DURATION_SECONDS, MOVE_DELAY_SECONDS, COOLDOWN_SECONDS, PieceType, PieceState
 from kungfu_chess.model.position import Position
 
 # RealTimeArbiter owns all timing logic.
@@ -17,14 +17,18 @@ class RealTimeArbiter:
         self._board = board
         self.pending_moves = []
         self.pending_jumps = []
+        self.pending_cooldowns = []
+        self._time_offset = 0.0
+
+    def _now(self):
+        return time.time() + self._time_offset
 
     def advance_time(self, milliseconds: int):
         """Shift all pending arrival timestamps back by ms, simulating elapsed time."""
-        delta = milliseconds / 1000.0
-        for m in self.pending_moves:
-            m.arrive_at -= delta
-        for j in self.pending_jumps:
-            j.land_at -= delta
+        self._time_offset += milliseconds / 1000.0
+
+    def is_cooling(self, cell: Position):
+        return any(c.cell == cell for c in self.pending_cooldowns)
 
     def is_airborne(self, cell: Position):
         return any(j.cell == cell for j in self.pending_jumps)
@@ -36,7 +40,7 @@ class RealTimeArbiter:
         piece = self._board.get_piece(*start)
         if piece is not None:
             piece.set_state(PieceState.MOVING)
-        now = time.time()
+        now = self._now()
         dr, dc = start.direction_to(end)
         curr = Position(start.row + dr, start.col + dc)
         step = 1
@@ -77,13 +81,13 @@ class RealTimeArbiter:
         return False
 
     def schedule_jump(self, cell):
-        self.pending_jumps.append(PendingJump(cell, time.time() + JUMP_DURATION_SECONDS))
+        self.pending_jumps.append(PendingJump(cell, self._now() + JUMP_DURATION_SECONDS))
 
     def moving_colors(self):
         return {self._board.get_piece(*m.start).color for m in self.pending_moves}
 
     def execute_pending_moves(self):
-        now = time.time()
+        now = self._now()
         arrived_ends = []
         for move in sorted(self.pending_moves, key=lambda m: m.arrive_at):
             if now >= move.arrive_at:
@@ -93,6 +97,12 @@ class RealTimeArbiter:
                 if game_over_target is not None:
                     return game_over_target, arrived_ends
         self.pending_jumps = [j for j in self.pending_jumps if now < j.land_at]
+        expired = [c for c in self.pending_cooldowns if now >= c.ready_at]
+        for c in expired:
+            piece = self._board.get_piece(*c.cell)
+            if piece is not None and piece.state == PieceState.COOLING:
+                piece.set_state(PieceState.IDLE)
+        self.pending_cooldowns = [c for c in self.pending_cooldowns if now < c.ready_at]
         return None, arrived_ends
 
     def _resolve_move(self, move):
@@ -112,7 +122,8 @@ class RealTimeArbiter:
             self.pending_moves.remove(move)
             return None, None
         self._board.move_piece(move.start, move.end)
-        moving_piece.set_state(PieceState.IDLE)
+        moving_piece.set_state(PieceState.COOLING)
+        self.pending_cooldowns.append(PendingCooldown(move.end, move.arrive_at + COOLDOWN_SECONDS))
         self.pending_moves.remove(move)
         if target is not None and target.ptype == PieceType.KING:
             target.set_state(PieceState.CAPTURED)
