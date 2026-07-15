@@ -27,7 +27,6 @@ class Controller:
                 return
             result: MoveResult = self._game.request_move(self.selected, pos)
             if not result.ok and result.reason == "invalid_move":
-                # friendly piece — switch selection if it has a piece
                 if self._game.has_piece(pos):
                     self.selected = pos
                 else:
@@ -54,7 +53,7 @@ class Controller:
 
 def main():
     from kungfu_chess.io.board_parser import TextInputParser
-    from kungfu_chess.engine.game_engine import GameEngine
+    from kungfu_chess.realtime.game_engine import GameEngine
     from kungfu_chess.shared.validators import validate_board
     from kungfu_chess.input.board_mapper import parse
 

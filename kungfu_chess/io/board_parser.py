@@ -20,6 +20,16 @@ def parse_input(lines):
     return board_rows, commands
 
 
+def load_board_csv(path: str) -> list:
+    """Loads a board from a CSV file. Each cell is PieceTypeColor e.g. PW, RB."""
+    rows = []
+    with open(path) as f:
+        for line in f:
+            cells = line.strip().split(',')
+            rows.append([c[1].lower() + c[0] if len(c) == 2 else '.' for c in cells])
+    return rows
+
+
 class TextInputParser(IInputParser):
     def parse(self, raw: str) -> tuple:
         return parse_input(raw.splitlines())

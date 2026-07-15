@@ -1,6 +1,6 @@
 import pytest
 import time
-from kungfu_chess.engine.game_engine import GameEngine as Game
+from kungfu_chess.realtime.game_engine import GameEngine as Game
 from kungfu_chess.model.position import Position
 
 
@@ -460,14 +460,18 @@ class TestGetSnapshot:
         assert snap.get(7, 1) == PieceSnapshot(Color.WHITE, PieceType.KING)
 
     def test_get_snapshot_after_move(self):
-        from kungfu_chess.shared.dto import PieceSnapshot
-        from kungfu_chess.shared.constants import PieceType, Color
+        from kungfu_chess.shared.constants import PieceType, Color, PieceState
         game = make_game()
         game.request_move(p(6, 1), p(5, 1))
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
         snap = game.get_snapshot()
-        assert snap.get(5, 1) == PieceSnapshot(Color.WHITE, PieceType.PAWN, True)
+        piece = snap.get(5, 1)
+        assert piece is not None
+        assert piece.color == Color.WHITE
+        assert piece.ptype == PieceType.PAWN
+        assert piece.is_cooling is True
+        assert piece.state == PieceState.COOLING
         assert snap.get(6, 1) is None
 
 

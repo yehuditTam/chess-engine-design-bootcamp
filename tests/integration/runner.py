@@ -2,7 +2,7 @@ import io
 from contextlib import redirect_stdout
 from kungfu_chess.io.board_parser import parse_input
 from kungfu_chess.shared.validators import validate_board
-from kungfu_chess.engine.game_engine import GameEngine
+from kungfu_chess.realtime.game_engine import GameEngine
 from kungfu_chess.input.controller import Controller
 from kungfu_chess.input.board_mapper import parse
 

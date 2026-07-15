@@ -1,6 +1,6 @@
 import time
 import pytest
-from kungfu_chess.engine.game_engine import GameEngine
+from kungfu_chess.realtime.game_engine import GameEngine
 from kungfu_chess.input.controller import Controller
 from kungfu_chess.model.position import Position
 

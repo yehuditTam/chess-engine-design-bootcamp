@@ -41,6 +41,11 @@ class RealTimeArbiter:
         if piece is not None:
             piece.set_state(PieceState.MOVING)
         now = self._now()
+        # Knight jumps directly in one step
+        from kungfu_chess.shared.constants import PieceType
+        if piece is not None and piece.ptype == PieceType.KNIGHT:
+            self.pending_moves.append(PendingMove(start, end, now + MOVE_DELAY_SECONDS))
+            return
         dr, dc = start.direction_to(end)
         curr = Position(start.row + dr, start.col + dc)
         step = 1

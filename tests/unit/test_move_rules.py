@@ -146,11 +146,11 @@ class TestBishopRequiresClearPath:
     def test_bishop_requires_clear_path(self):
         assert BishopStrategy().requires_clear_path()
 
-    def test_base_strategy_requires_clear_path_false(self):
+    def test_base_strategy_requires_clear_path_true(self):
         from kungfu_chess.rules.piece_rules import MoveStrategy
         class Concrete(MoveStrategy):
             def is_legal(self, start, end, target): return True
-        assert not Concrete().requires_clear_path()
+        assert Concrete().requires_clear_path()
 
 
 class TestKnightJumpsOverPieces:

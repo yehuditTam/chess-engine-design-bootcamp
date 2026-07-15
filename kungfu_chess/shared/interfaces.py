@@ -50,6 +50,29 @@ class IGame(ABC):
     @abstractmethod
     def get_snapshot(self): pass
 
+    @abstractmethod
+    def request_move(self, start, end): pass
+
+    @abstractmethod
+    def has_piece(self, pos) -> bool: pass
+
+    @abstractmethod
+    def handle_jump(self, cell) -> None: pass
+
+    @abstractmethod
+    def get_legal_moves(self, start) -> list: pass
+
+    @abstractmethod
+    def advance_time(self, milliseconds: int) -> None: pass
+
+
+class IRenderer(ABC):
+    @abstractmethod
+    def render(self, board, **kwargs) -> None: pass
+
+    @abstractmethod
+    def get_board_offset(self) -> tuple: pass
+
 
 class IInputParser(ABC):
     @abstractmethod

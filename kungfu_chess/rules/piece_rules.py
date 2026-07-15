@@ -16,9 +16,9 @@ class MoveStrategy(ABC):
         pass
 
     def requires_clear_path(self) -> bool:
-        # Most pieces need a clear path (rook, bishop, queen, pawn).
-        # Knight overrides this to return False — it jumps over pieces.
-        return False
+        # Default: most pieces need a clear path.
+        # KnightStrategy overrides this to return False — it jumps over pieces.
+        return True
 
 
 class KingStrategy(MoveStrategy):
@@ -26,38 +26,33 @@ class KingStrategy(MoveStrategy):
         dr, dc = abs(start.row - end.row), abs(start.col - end.col)
         return (dr <= 1 and dc <= 1) and (dr, dc) != (0, 0)
 
+    def requires_clear_path(self):
+        return False
+
 
 class RookStrategy(MoveStrategy):
     def is_legal(self, start, end, target):
         return start.row == end.row or start.col == end.col
-
-    def requires_clear_path(self):
-        return True
 
 
 class BishopStrategy(MoveStrategy):
     def is_legal(self, start, end, target):
         return abs(start.row - end.row) == abs(start.col - end.col)
 
-    def requires_clear_path(self):
-        return True
-
 
 class QueenStrategy(MoveStrategy):
-    # Queen combines rook and bishop movement — no separate logic needed.
     def is_legal(self, start, end, target):
         return (start.row == end.row or start.col == end.col or
                 abs(start.row - end.row) == abs(start.col - end.col))
 
-    def requires_clear_path(self):
-        return True
-
 
 class KnightStrategy(MoveStrategy):
-    # Knight is the only piece that jumps — requires_clear_path() stays False.
     def is_legal(self, start, end, target):
         dr, dc = abs(start.row - end.row), abs(start.col - end.col)
         return (dr == 2 and dc == 1) or (dr == 1 and dc == 2)
+
+    def requires_clear_path(self):
+        return False
 
 
 class PawnStrategy(MoveStrategy):

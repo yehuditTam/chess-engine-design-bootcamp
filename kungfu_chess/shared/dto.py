@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional, List
-from kungfu_chess.shared.constants import PieceType, Color
+from kungfu_chess.shared.constants import PieceType, Color, PieceState
 
 
 @dataclass(frozen=True)
@@ -8,6 +8,8 @@ class PieceSnapshot:
     color: Color
     ptype: PieceType
     is_cooling: bool = False
+    state: PieceState = PieceState.IDLE
+    is_airborne: bool = False
 
 
 @dataclass(frozen=True)
