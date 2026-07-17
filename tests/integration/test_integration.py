@@ -21,7 +21,8 @@ class TestInvalidMoves:
 
 class TestRunnerValidation:
     def test_invalid_board_returns_error(self):
-        import tempfile, os
+        import tempfile
+        import os
         content = "xx yy\nPRINT\n"
         with tempfile.NamedTemporaryFile(mode='w', suffix='.kfc', delete=False) as f:
             f.write(content)

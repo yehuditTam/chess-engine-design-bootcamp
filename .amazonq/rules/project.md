@@ -24,7 +24,8 @@ kungfu_chess/
 │   └── board_printer.py  — print_board: prints BoardSnapshot to stdout
 ├── view/
 │   ├── renderer.py       — Renderer: abstract base class for rendering
-│   └── image_view.py     — ImageView: pygame-based tile renderer, uses BoardSnapshot + TILE_SIZE
+│   ├── image_view.py     — ImageView: OpenCV tile renderer, uses BoardSnapshot + TILE_SIZE
+│   └── name_dialog.py    — ask_player_names(): tkinter dialog shown before game starts
 └── shared/
     ├── constants.py      — MOVE_DELAY_SECONDS, JUMP_DURATION_SECONDS, PieceType, Color
     ├── ui_constants.py   — TILE_SIZE (UI only, never used by game logic)
@@ -50,7 +51,7 @@ tests/                    — flat, one file per layer
 | `realtime` | active motion objects, time progression, arrival resolution, capture events, game-over | tool-specific motion logic, rendering, input parsing, pixel mapping |
 | `input` | interpret clicks, pixel→cell mapping, stdin parsing | movement rules, board mutation, rendering, timing |
 | `io` | text parsing and printing of board state | game logic, rendering, timing |
-| `view` | pygame rendering using BoardSnapshot | game logic, board mutation, input parsing |
+| `view` | OpenCV rendering + tkinter name dialog using BoardSnapshot | game logic, board mutation, input parsing |
 | `shared` | constants, exceptions, interfaces, DTOs, input validation | business logic of any kind |
 
 ## Key Rules

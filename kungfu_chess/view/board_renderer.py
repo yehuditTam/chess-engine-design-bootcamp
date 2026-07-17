@@ -1,9 +1,15 @@
 import time
 import cv2
 import numpy as np
+from kungfu_chess.shared.ui_constants import LABEL_PAD
 from kungfu_chess.view.sprite_loader import SpriteLoader
 
+# --- colors ---
 _TEXT_LIGHT = (230, 230, 230)
+
+# --- drawing ---
+_SPRITE_SCALE = 0.92
+_ANIM_STAGGER = 0.37
 _COL_LABELS = "abcdefgh"
 
 
@@ -12,7 +18,8 @@ class BoardRenderer:
         self._loader = sprite_loader
         self._jump_start: dict[tuple, float] = {}
 
-    def draw(self, canvas: np.ndarray, board_img: np.ndarray, board_x: int, board_y: int, board, tile: int):
+    def draw(self, canvas: np.ndarray, board_img: np.ndarray,
+             board_x: int, board_y: int, board, tile: int):
         bh, bw = board_img.shape[:2]
         canvas[board_y:board_y+bh, board_x:board_x+bw] = board_img
 
@@ -28,26 +35,29 @@ class BoardRenderer:
                     anim_offset = -self._jump_start[key]
                 else:
                     self._jump_start.pop(key, None)
-                    anim_offset = (row * 8 + col) * 0.37
+                    # anim_offset staggers idle animations per cell
+                    # so all pieces don't pulse in sync.
+                    anim_offset = (row * 8 + col) * _ANIM_STAGGER
                 state = 'jumping' if piece.is_airborne else piece.state.value
                 sprite = self._loader.load_piece_sprite(
-                    piece.ptype.value, piece.color.value, int(tile * 0.92), state, anim_offset)
+                    piece.ptype.value, piece.color.value,
+                    int(tile * _SPRITE_SCALE), state, anim_offset
+                )
                 sh, sw = sprite.shape[:2]
                 px = board_x + col * tile + (tile - sw) // 2
                 py = board_y + row * tile + (tile - sh) // 2
                 self._blend(canvas, sprite, px, py)
 
         board_px = tile * 8
-        label_pad = 24
         for c, lbl in enumerate(_COL_LABELS):
             cx = board_x + c * tile + tile // 2
-            self._text(canvas, lbl, cx, board_y - label_pad // 2)
-            self._text(canvas, lbl, cx, board_y + board_px + label_pad // 2)
+            self._text(canvas, lbl, cx, board_y - LABEL_PAD // 2)
+            self._text(canvas, lbl, cx, board_y + board_px + LABEL_PAD // 2)
         for r in range(8):
             lbl = str(8 - r)
             cy = board_y + r * tile + tile // 2
-            self._text(canvas, lbl, board_x - label_pad // 2, cy)
-            self._text(canvas, lbl, board_x + board_px + label_pad // 2, cy)
+            self._text(canvas, lbl, board_x - LABEL_PAD // 2, cy)
+            self._text(canvas, lbl, board_x + board_px + LABEL_PAD // 2, cy)
 
     @staticmethod
     def _blend(canvas: np.ndarray, sprite: np.ndarray, x: int, y: int):

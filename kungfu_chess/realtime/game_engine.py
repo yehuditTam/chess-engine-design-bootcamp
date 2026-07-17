@@ -1,20 +1,32 @@
-import time
 from kungfu_chess.model.board import Board
 from kungfu_chess.model.position import Position
+from kungfu_chess.model.player import Player
 from kungfu_chess.rules.rule_engine import RuleEngine
 from kungfu_chess.realtime.real_time_arbiter import RealTimeArbiter
-from kungfu_chess.shared.constants import PieceState
-from kungfu_chess.shared.dto import MoveResult, PieceSnapshot, BoardSnapshot
-from kungfu_chess.shared.exceptions import InvalidMoveError, MotionInProgressError
+from kungfu_chess.realtime.score_tracker import ScoreTracker
+from kungfu_chess.shared.constants import PieceState, Color
+from kungfu_chess.shared.dto import (
+    MoveResult, PieceSnapshot, BoardSnapshot, PlayerSnapshot, GameSnapshot
+)
+from kungfu_chess.shared.exceptions import (
+    InvalidMoveError, MotionInProgressError, FriendlyFireError, CoolingError, OutOfBoundsError,
+    BlockedPathError
+)
 from kungfu_chess.shared.interfaces import IGame
 
 
 class GameEngine(IGame):
-    def __init__(self, board_rows):
+    def __init__(self, board_rows, black: Player = None, white: Player = None):
         self._board = Board(board_rows)
         self._rule_engine = RuleEngine(self._board)
         self._arbiter = RealTimeArbiter(self._board)
         self.is_game_over = False
+        black = black or Player("Player 1", Color.BLACK)
+        white = white or Player("Player 2", Color.WHITE)
+        self._trackers = {
+            Color.BLACK: ScoreTracker(black),
+            Color.WHITE: ScoreTracker(white),
+        }
 
     # --- public interface ---
 
@@ -40,9 +52,24 @@ class GameEngine(IGame):
             self._arbiter.is_airborne(pos),
         )
 
+    def get_game_snapshot(self) -> GameSnapshot:
+        board = self.get_snapshot()
+
+        def _player_snap(color):
+            t = self._trackers[color]
+            return PlayerSnapshot(
+                t.player.name, color, t.score, tuple(t.moves), tuple(t.captured)
+            )
+        return GameSnapshot(
+            board=board, black=_player_snap(Color.BLACK), white=_player_snap(Color.WHITE)
+        )
+
     def execute_pending_moves(self):
-        target, ends = self._arbiter.execute_pending_moves()
-        for end in ends:
+        completed, target, ends = self._arbiter.execute_pending_moves()
+        for (start, end, ptype, moving_color, captured_ptype) in completed:
+            self._trackers[moving_color].record_move(ptype, start, end)
+            if captured_ptype is not None:
+                self._trackers[moving_color].record_capture(captured_ptype)
             self._check_promotion(end)
         if target is not None:
             self.is_game_over = True
@@ -57,6 +84,8 @@ class GameEngine(IGame):
         try:
             self._try_move(start, end)
             return MoveResult(ok=True)
+        except CoolingError:
+            return MoveResult(ok=False, reason="invalid_move")
         except MotionInProgressError:
             return MoveResult(ok=False, reason="motion_in_progress")
         except InvalidMoveError:
@@ -65,7 +94,9 @@ class GameEngine(IGame):
     def handle_jump(self, cell: Position):
         if not self.is_game_over:
             piece = self._board.get_piece(*cell)
-            if piece is not None and not self._arbiter.is_pending(cell) and not self._arbiter.is_airborne(cell):
+            if (piece is not None
+                    and not self._arbiter.is_pending(cell)
+                    and not self._arbiter.is_airborne(cell)):
                 self._arbiter.schedule_jump(cell)
 
     def get_legal_moves(self, start: Position) -> list:
@@ -80,7 +111,7 @@ class GameEngine(IGame):
                 try:
                     self._rule_engine.is_legal(start, end, piece, pending_starts)
                     moves.append(end)
-                except Exception:
+                except (InvalidMoveError, FriendlyFireError, OutOfBoundsError, BlockedPathError):
                     pass
         return moves
 
@@ -105,11 +136,11 @@ class GameEngine(IGame):
         if self._arbiter.is_pending(start):
             raise InvalidMoveError(f"{start} is already pending")
         if self._arbiter.is_cooling(start):
-            raise InvalidMoveError(f"{start} is cooling down")
+            raise CoolingError(f"{start} is cooling down")
         target = self._board.get_piece(*end)
         piece = self._board.get_piece(*start)
         if target is not None and target.color == piece.color:
-            raise InvalidMoveError(f"Friendly piece at {end}")
+            raise FriendlyFireError(f"Friendly piece at {end}")
         pending_starts = {m.start for m in self._arbiter.pending_moves}
         moving_colors = self._arbiter.moving_colors()
         if moving_colors and piece.color not in moving_colors:

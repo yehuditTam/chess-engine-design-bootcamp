@@ -1,85 +1,181 @@
 import cv2
 import numpy as np
+import time
 from kungfu_chess.shared.dto import BoardSnapshot
 from kungfu_chess.shared.interfaces import IRenderer
+from kungfu_chess.shared.ui_constants import (
+    TILE_SIZE, BOARD_CELLS, LABEL_PAD, PANEL_W, PANEL_PAD, TOP_BAR, WINDOW_TITLE
+)
 from kungfu_chess.view.sprite_loader import SpriteLoader
 from kungfu_chess.view.board_renderer import BoardRenderer
 from kungfu_chess.view.panel_renderer import PanelRenderer
 
-_TILE      = 80
-_BOARD_PX  = _TILE * 8
-_LABEL_PAD = 24
-_PANEL_W   = 220
-_PANEL_PAD = 18
-_TOP_BAR   = 70
-_WIN_W     = _LABEL_PAD + _BOARD_PX + _LABEL_PAD + _PANEL_PAD * 2 + _PANEL_W * 2 + _PANEL_PAD * 2
-_WIN_H     = _TOP_BAR + _LABEL_PAD + _BOARD_PX + _LABEL_PAD + _TOP_BAR
-_BG        = (72, 72, 72)
+# --- window layout ---
+_BOARD_PX = TILE_SIZE * BOARD_CELLS
+_WIN_W = LABEL_PAD + _BOARD_PX + LABEL_PAD + PANEL_PAD * 2 + PANEL_W * 2 + PANEL_PAD * 2
+_WIN_H = TOP_BAR + LABEL_PAD + _BOARD_PX + LABEL_PAD + TOP_BAR
+
+# --- colors ---
+_BG = (72, 72, 72)
 _TEXT_LIGHT = (230, 230, 230)
+_COLOR_SELECTED = (0, 255, 0)
+_COLOR_LEGAL_CAPTURE = (0, 60, 180)
+_COLOR_LEGAL_MOVE = (0, 180, 60)
+_COLOR_GAME_OVER = (0, 215, 255)
+_COLOR_OVERLAY = (0, 0, 0)
+
+# --- drawing ---
+_BORDER_INSET = 2
+_BORDER_THIN = 2
+_BORDER_THICK = 3
+_LEGAL_ALPHA = 0.35
+_OVERLAY_ALPHA = 0.6
+
+# --- typography ---
+_FONT_LARGE = 2.0
+_FONT_SMALL = 0.7
+_FONT_THICK_LARGE = 3
+_FONT_THICK_SMALL = 1
+_GAMEOVER_TEXT_Y_OFF = 20
+_SUBTITLE_Y_OFF = 30
+
+# --- misc ---
+_WINDOW_TITLE = WINDOW_TITLE
 
 
 class ImageView(IRenderer):
     def __init__(self, sprite_loader: SpriteLoader = None, board_renderer: BoardRenderer = None):
-        self._loader         = sprite_loader or SpriteLoader()
+        self._loader = sprite_loader or SpriteLoader()
         self._board_renderer = board_renderer or BoardRenderer(self._loader)
-        self._panel_renderer = PanelRenderer()
-        self._board_x = _PANEL_PAD + _PANEL_W + _PANEL_PAD + _LABEL_PAD
-        self._board_y = _TOP_BAR + _LABEL_PAD
+        self._panel_renderer = PanelRenderer(self._loader)
+        self._board_x = PANEL_PAD + PANEL_W + PANEL_PAD + LABEL_PAD
+        self._board_y = TOP_BAR + LABEL_PAD
+        self._scale = 1.0
+        self._start_time = time.time()
+
+    def reset_timer(self):
+        self._start_time = time.time()
 
     def get_board_offset(self) -> tuple:
-        return self._board_x, self._board_y, _TILE
+        s = self._scale
+        return int(self._board_x * s), int(self._board_y * s), int(TILE_SIZE * s)
 
     def render(self, board: BoardSnapshot,
                black_name="None", white_name="None",
-               black_score=0,     white_score=0,
-               black_moves=None,  white_moves=None,
+               black_score=0, white_score=0,
+               black_moves=None, white_moves=None,
+               black_captured=None, white_captured=None,
                selected=None, feedback=None, legal_moves=None, game_over=False) -> None:
 
-        black_moves = black_moves or []
-        white_moves = white_moves or []
-
         canvas = np.full((_WIN_H, _WIN_W, 3), _BG, dtype=np.uint8)
-        panel_h = _LABEL_PAD + _BOARD_PX + _LABEL_PAD
-
-        self._panel_renderer.draw(canvas, _PANEL_PAD, self._board_y - _LABEL_PAD,
-                                  _PANEL_W, panel_h, black_name, "Black", black_score, black_moves)
-        self._panel_renderer.draw(canvas, self._board_x + _BOARD_PX + _LABEL_PAD + _PANEL_PAD,
-                                  self._board_y - _LABEL_PAD,
-                                  _PANEL_W, panel_h, white_name, "White", white_score, white_moves)
-
-        board_img = self._loader.load_board_img(_BOARD_PX)
-        self._board_renderer.draw(canvas, board_img, self._board_x, self._board_y, board, _TILE)
-
+        self._draw_panels(
+            canvas, black_name, black_score, black_moves or [], black_captured or [],
+            white_name, white_score, white_moves or [], white_captured or []
+        )
+        self._board_renderer.draw(
+            canvas, self._loader.load_board_img(_BOARD_PX),
+            self._board_x, self._board_y, board, TILE_SIZE
+        )
         if legal_moves:
-            overlay = canvas.copy()
-            for pos in legal_moves:
-                x = self._board_x + pos.col * _TILE
-                y = self._board_y + pos.row * _TILE
-                color = (0, 60, 180) if board.get(pos.row, pos.col) else (0, 180, 60)
-                cv2.rectangle(overlay, (x, y), (x + _TILE, y + _TILE), color, -1)
-            cv2.addWeighted(overlay, 0.35, canvas, 0.65, 0, canvas)
-
+            self._draw_legal_moves(canvas, board, legal_moves)
         if selected is not None:
-            x = self._board_x + selected.col * _TILE
-            y = self._board_y + selected.row * _TILE
-            cv2.rectangle(canvas, (x+2, y+2), (x+_TILE-2, y+_TILE-2), (0, 255, 0), 2)
-
+            self._draw_selection(canvas, selected)
         if feedback is not None:
-            pos, color, _ = feedback
-            x = self._board_x + pos.col * _TILE
-            y = self._board_y + pos.row * _TILE
-            cv2.rectangle(canvas, (x+2, y+2), (x+_TILE-2, y+_TILE-2), color, 3)
-
+            self._draw_feedback(canvas, feedback)
         if game_over:
-            overlay = canvas.copy()
-            cv2.rectangle(overlay, (0, 0), (_WIN_W, _WIN_H), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.6, canvas, 0.4, 0, canvas)
-            (tw, _), _ = cv2.getTextSize("GAME OVER", cv2.FONT_HERSHEY_SIMPLEX, 2.0, 3)
-            cv2.putText(canvas, "GAME OVER", (_WIN_W // 2 - tw // 2, _WIN_H // 2 - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 215, 255), 3, cv2.LINE_AA)
-            (tw, _), _ = cv2.getTextSize("Press R to restart  |  ESC to exit", cv2.FONT_HERSHEY_SIMPLEX, 0.7, 1)
-            cv2.putText(canvas, "Press R to restart  |  ESC to exit",
-                        (_WIN_W // 2 - tw // 2, _WIN_H // 2 + 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, _TEXT_LIGHT, 1, cv2.LINE_AA)
+            self._draw_game_over(canvas)
+        self._draw_stopwatch(canvas)
+        self._scale = self._get_scale(canvas.shape[1], canvas.shape[0])
+        if self._scale != 1.0:
+            display = cv2.resize(
+                canvas, None, fx=self._scale, fy=self._scale, interpolation=cv2.INTER_AREA
+            )
+        else:
+            display = canvas
+        cv2.imshow(_WINDOW_TITLE, display)
 
-        cv2.imshow("Kungfu Chess", canvas)
+    def _draw_stopwatch(self, canvas):
+        elapsed = int(time.time() - self._start_time)
+        txt = f"{elapsed // 60:02}:{elapsed % 60:02}"
+        (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.4, 2)
+        cv2.putText(canvas, txt,
+                    (_WIN_W // 2 - tw // 2, TOP_BAR // 2 + th // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.4, _TEXT_LIGHT, 2, cv2.LINE_AA)
+
+    @staticmethod
+    def _get_scale(win_w: int, win_h: int) -> float:
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()
+            sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+            root.destroy()
+        except Exception:
+            return 1.0
+        margin = 0.9
+        return min(sw * margin / win_w, sh * margin / win_h, 1.0)
+
+    def _draw_panels(self, canvas, black_name, black_score, black_moves, black_captured,
+                     white_name, white_score, white_moves, white_captured):
+        panel_h = LABEL_PAD + _BOARD_PX + LABEL_PAD
+        self._panel_renderer.draw(
+            canvas, PANEL_PAD, self._board_y - LABEL_PAD,
+            PANEL_W, panel_h, black_name, "Black", black_score, black_moves, black_captured
+        )
+        self._panel_renderer.draw(
+            canvas, self._board_x + _BOARD_PX + LABEL_PAD + PANEL_PAD,
+            self._board_y - LABEL_PAD,
+            PANEL_W, panel_h, white_name, "White", white_score, white_moves, white_captured
+        )
+
+    def _draw_legal_moves(self, canvas, board, legal_moves):
+        overlay = canvas.copy()
+        for pos in legal_moves:
+            x = self._board_x + pos.col * TILE_SIZE
+            y = self._board_y + pos.row * TILE_SIZE
+            color = _COLOR_LEGAL_CAPTURE if board.get(pos.row, pos.col) else _COLOR_LEGAL_MOVE
+            cv2.rectangle(overlay, (x, y), (x + TILE_SIZE, y + TILE_SIZE), color, -1)
+        cv2.addWeighted(overlay, _LEGAL_ALPHA, canvas, 1 - _LEGAL_ALPHA, 0, canvas)
+
+    def _draw_selection(self, canvas, selected):
+        x = self._board_x + selected.col * TILE_SIZE
+        y = self._board_y + selected.row * TILE_SIZE
+        cv2.rectangle(
+            canvas,
+            (x + _BORDER_INSET, y + _BORDER_INSET),
+            (x + TILE_SIZE - _BORDER_INSET, y + TILE_SIZE - _BORDER_INSET),
+            _COLOR_SELECTED, _BORDER_THIN
+        )
+
+    def _draw_feedback(self, canvas, feedback):
+        pos, color, _ = feedback
+        x = self._board_x + pos.col * TILE_SIZE
+        y = self._board_y + pos.row * TILE_SIZE
+        cv2.rectangle(
+            canvas,
+            (x + _BORDER_INSET, y + _BORDER_INSET),
+            (x + TILE_SIZE - _BORDER_INSET, y + TILE_SIZE - _BORDER_INSET),
+            color, _BORDER_THICK
+        )
+
+    def _draw_game_over(self, canvas):
+        overlay = canvas.copy()
+        cv2.rectangle(overlay, (0, 0), (_WIN_W, _WIN_H), _COLOR_OVERLAY, -1)
+        cv2.addWeighted(overlay, _OVERLAY_ALPHA, canvas, 1 - _OVERLAY_ALPHA, 0, canvas)
+        (tw, _), _ = cv2.getTextSize(
+            "GAME OVER", cv2.FONT_HERSHEY_SIMPLEX, _FONT_LARGE, _FONT_THICK_LARGE
+        )
+        cv2.putText(
+            canvas, "GAME OVER",
+            (_WIN_W // 2 - tw // 2, _WIN_H // 2 - _GAMEOVER_TEXT_Y_OFF),
+            cv2.FONT_HERSHEY_SIMPLEX, _FONT_LARGE, _COLOR_GAME_OVER, _FONT_THICK_LARGE, cv2.LINE_AA
+        )
+        subtitle = "Press R to restart  |  ESC to exit"
+        (tw, _), _ = cv2.getTextSize(
+            subtitle, cv2.FONT_HERSHEY_SIMPLEX, _FONT_SMALL, _FONT_THICK_SMALL
+        )
+        cv2.putText(
+            canvas, subtitle,
+            (_WIN_W // 2 - tw // 2, _WIN_H // 2 + _SUBTITLE_Y_OFF),
+            cv2.FONT_HERSHEY_SIMPLEX, _FONT_SMALL, _TEXT_LIGHT, _FONT_THICK_SMALL, cv2.LINE_AA
+        )

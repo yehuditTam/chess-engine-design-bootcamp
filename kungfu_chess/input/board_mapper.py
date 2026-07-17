@@ -1,4 +1,6 @@
-from kungfu_chess.input.commands import ClickCommand, JumpCommand, PrintBoardCommand, WaitCommand, Command
+from kungfu_chess.input.commands import (
+    ClickCommand, JumpCommand, PrintBoardCommand, WaitCommand, Command
+)
 from kungfu_chess.shared.ui_constants import TILE_SIZE
 
 

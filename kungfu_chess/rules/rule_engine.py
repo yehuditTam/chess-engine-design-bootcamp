@@ -1,10 +1,10 @@
 from kungfu_chess.model.position import Position
-from kungfu_chess.shared.exceptions import OutOfBoundsError, BlockedPathError, FriendlyFireError, InvalidMoveError
+from kungfu_chess.shared.exceptions import (
+    OutOfBoundsError, BlockedPathError, FriendlyFireError, InvalidMoveError
+)
 
-# Design Pattern: Validation Service
-# RuleEngine is a stateless, read-only service. It never mutates the board.
-# GameEngine owns the RuleEngine instance and calls it before scheduling any move.
-# Keeping validation separate from Board means Board stays a pure data store.
+# RuleEngine is read-only so Board stays a pure data store with no validation logic.
+# GameEngine owns RuleEngine and calls it before scheduling — validation never happens inside Board.
 
 
 class RuleEngine:

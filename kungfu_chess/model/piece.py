@@ -1,11 +1,9 @@
 from kungfu_chess.shared.constants import PieceType, PieceState
 from kungfu_chess.shared.interfaces import IPiece
 
-# Piece holds identity (color, type) and delegates all movement logic to its
-# move_strategy (Strategy pattern). Piece itself has no knowledge of board size,
-# coordinates, or timing.
-# state is a lifecycle flag only (IDLE / MOVING / CAPTURED) — it is set by
-# RealTimeArbiter, never by Piece itself, to keep timing logic in one place.
+# Piece delegates movement logic to move_strategy so that adding a new piece type
+# requires only a new strategy class, not changes to Piece or Board.
+# State is mutated only by RealTimeArbiter so that all timing decisions stay in one place.
 
 
 class Piece(IPiece):

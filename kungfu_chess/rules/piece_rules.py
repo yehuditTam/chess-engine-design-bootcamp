@@ -1,11 +1,7 @@
 from abc import ABC, abstractmethod
-from kungfu_chess.model.position import Position
 
-# Design Pattern: Strategy
-# Each piece type encapsulates its own movement rule as a separate strategy class.
-# This allows GameEngine and RuleEngine to validate any move without knowing
-# which piece type they are dealing with — they just call is_legal().
-# Adding a new piece type means adding a new strategy class, not modifying existing code.
+# Strategy pattern: each piece type owns its movement rule so RuleEngine never needs
+# a switch/if-chain on piece type — open/closed principle.
 
 
 class MoveStrategy(ABC):
@@ -16,8 +12,8 @@ class MoveStrategy(ABC):
         pass
 
     def requires_clear_path(self) -> bool:
-        # Default: most pieces need a clear path.
-        # KnightStrategy overrides this to return False — it jumps over pieces.
+        # Knight and King don't need path-clearing because they jump or move one step.
+        # Overriding here avoids a special-case check in RuleEngine.
         return True
 
 
@@ -56,9 +52,8 @@ class KnightStrategy(MoveStrategy):
 
 
 class PawnStrategy(MoveStrategy):
-    # Pawn is the most stateful strategy: direction depends on color,
-    # double-move is only allowed from the start row, and capture is diagonal only.
-    # start_row and promotion_row are injected at construction time from Board.
+    # Pawn direction, double-move eligibility, and promotion row are injected at construction
+    # so PawnStrategy stays stateless after init — Board owns the row numbers, not the strategy.
     def __init__(self, color, start_row=None, promotion_row=None):
         from kungfu_chess.shared.constants import Color
         self.color = color

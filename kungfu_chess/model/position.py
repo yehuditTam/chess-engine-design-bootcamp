@@ -1,12 +1,10 @@
 from dataclasses import dataclass
 
-# Value Object: Position
-# Represents a single square on the board as an immutable (row, col) pair.
-# frozen=True gives free equality and hash, so Position can be used in sets and dicts.
-# __iter__ allows tuple-unpacking: row, col = pos — keeps compatibility with
-# existing code that passes coordinates as arguments.
-# direction_to() is placed here because it is pure coordinate math with no
-# knowledge of board size or piece rules.
+# frozen=True gives free equality and hash so Position can be used in sets/dicts
+# without boilerplate.
+# __iter__ allows tuple-unpacking (row, col = pos) to stay compatible with
+# grid[row][col] calls.
+# direction_to() lives here because it is pure coordinate math.
 
 
 @dataclass(frozen=True)

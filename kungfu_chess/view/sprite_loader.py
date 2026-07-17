@@ -5,13 +5,15 @@ import cv2
 import numpy as np
 
 PIECES_DIR = pathlib.Path(__file__).parent.parent.parent / "assets" / "pieces_mine"
-BOARD_PATH  = pathlib.Path(__file__).parent.parent.parent / "assets" / "board.png"
+BOARD_PATH = pathlib.Path(__file__).parent.parent.parent / "assets" / "board.png"
 
+# _STATE_MAP translates PieceState values to sprite folder names so the view
+# stays decoupled from the internal state enum naming.
 _STATE_MAP = {
-    'idle':    'idle',
-    'moving':  'move',
+    'idle': 'idle',
+    'moving': 'move',
     'cooling': 'long_rest',
-    'captured':'idle',
+    'captured': 'idle',
     'jumping': 'jump',
 }
 
@@ -52,7 +54,7 @@ class SpriteLoader:
     def _load_frames(self, folder: str, state: str) -> tuple:
         key = (folder, state)
         if key not in self._frames_cache:
-            state_dir = PIECES_DIR / folder / "states" / state
+            state_dir = (PIECES_DIR / folder / "states" / state).resolve()
             cfg_path = state_dir / "config.json"
             fps, is_loop = 6, True
             if cfg_path.exists():
@@ -70,7 +72,11 @@ class SpriteLoader:
         folder = color_value[0].lower() + ptype_value.upper()
         frames, fps, is_loop = self._load_frames(folder, anim_state)
         if not frames:
-            return _prepare_sprite(_load_img(PIECES_DIR / folder / "states" / "idle" / "sprites" / "1.png"), size)
+            return _prepare_sprite(
+                _load_img(
+                    PIECES_DIR / folder / "states" / "idle" / "sprites" / "1.png"
+                ), size
+            )
         frame_idx = int((time.time() + anim_offset) * fps)
         frame_idx = frame_idx % len(frames) if is_loop else min(frame_idx, len(frames) - 1)
         cache_key = (ptype_value, color_value, size, anim_state, frame_idx)

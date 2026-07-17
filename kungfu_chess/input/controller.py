@@ -35,14 +35,16 @@ class Controller:
                 self.selected = None
 
     def handle_command(self, cmd):
-        from kungfu_chess.input.commands import ClickCommand, JumpCommand, PrintBoardCommand, WaitCommand
+        from kungfu_chess.input.commands import (
+            ClickCommand, JumpCommand, PrintBoardCommand, WaitCommand
+        )
         from kungfu_chess.io.board_printer import print_board
         if isinstance(cmd, ClickCommand):
             self._game.execute_pending_moves()
             self.handle_click(Position(cmd.row, cmd.col))
         elif isinstance(cmd, WaitCommand):
-            self._game.execute_pending_moves()
             self._game.advance_time(cmd.milliseconds)
+            self._game.execute_pending_moves()
         elif isinstance(cmd, PrintBoardCommand):
             self._game.execute_pending_moves()
             print_board(self._game.get_snapshot())
@@ -62,8 +64,7 @@ def main():
 
     errors = validate_board(board_rows)
     if errors:
-        for error in errors:
-            print(f"ERROR {error.code}")
+        print("\n".join(f"ERROR {e.code}" for e in errors))
         return
 
     game = GameEngine(board_rows)
@@ -73,5 +74,5 @@ def main():
         controller.handle_command(parse(cmd))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

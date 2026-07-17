@@ -1,3 +1,4 @@
+# Interfaces decouple layers so tests can inject fakes without importing concrete classes.
 from abc import ABC, abstractmethod
 
 

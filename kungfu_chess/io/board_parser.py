@@ -1,4 +1,5 @@
 from kungfu_chess.shared.interfaces import IInputParser
+import pathlib
 
 
 def parse_input(lines):
@@ -22,8 +23,9 @@ def parse_input(lines):
 
 def load_board_csv(path: str) -> list:
     """Loads a board from a CSV file. Each cell is PieceTypeColor e.g. PW, RB."""
+    safe_path = pathlib.Path(path).resolve()
     rows = []
-    with open(path) as f:
+    with open(safe_path) as f:
         for line in f:
             cells = line.strip().split(',')
             rows.append([c[1].lower() + c[0] if len(c) == 2 else '.' for c in cells])

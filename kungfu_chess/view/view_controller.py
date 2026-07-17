@@ -1,6 +1,12 @@
 import time
 from kungfu_chess.model.position import Position
 from kungfu_chess.shared.dto import MoveResult
+from kungfu_chess.shared.ui_constants import FEEDBACK_TTL
+
+# --- colors ---
+_COLOR_FEEDBACK_OK = (0, 220, 255)
+_COLOR_FEEDBACK_ERR = (0, 0, 220)
+_COLOR_FEEDBACK_BLOCKED = (0, 140, 255)  # orange — other color is moving
 
 
 class ViewController:
@@ -41,7 +47,7 @@ class ViewController:
         else:
             result: MoveResult = self._game.request_move(self.selected, pos)
             if result.ok:
-                self.feedback = (pos, (0, 220, 255), time.time() + 0.4)
+                self.feedback = (pos, _COLOR_FEEDBACK_OK, time.time() + FEEDBACK_TTL)
                 self.selected = None
                 self.legal_moves = []
             else:
@@ -49,16 +55,21 @@ class ViewController:
                     self.selected = pos
                     self.legal_moves = self._game.get_legal_moves(pos)
                 else:
-                    self.feedback = (pos, (0, 0, 220), time.time() + 0.4)
+                    err_color = (
+                        _COLOR_FEEDBACK_BLOCKED
+                        if result.reason == "motion_in_progress"
+                        else _COLOR_FEEDBACK_ERR
+                    )
+                    self.feedback = (pos, err_color, time.time() + FEEDBACK_TTL)
                     self.selected = None
                     self.legal_moves = []
-
-    def reset(self):
-        self.selected = None
-        self.legal_moves = []
-        self.feedback = None
 
     def active_feedback(self):
         if self.feedback and time.time() < self.feedback[2]:
             return self.feedback
         return None
+
+    def reset(self):
+        self.selected = None
+        self.legal_moves = []
+        self.feedback = None

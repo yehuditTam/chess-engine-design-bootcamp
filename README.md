@@ -51,6 +51,8 @@ pip install -r requirements.txt
 python run_view.py
 ```
 
+A dialog will appear to enter player names before the game starts. Leave blank to use the defaults ("Black" / "White").
+
 **Mouse controls:**
 - Left click — select a piece, then click destination to move
 - Right click — make the selected piece jump

@@ -451,7 +451,158 @@ class TestFriendlyBlockingPath:
         assert rook_move.end == p(5, 4)
 
 
-class TestGetSnapshot:
+class TestExpireHelpers:
+    def test_expire_pending_moves(self):
+        import time
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 2))
+        game._expire_pending_moves()
+        assert game.pending_moves[0].arrive_at < time.time()
+
+    def test_expire_pending_cooldowns(self):
+        import time
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        game._expire_pending_cooldowns()
+        assert game.pending_cooldowns[0].ready_at < time.time()
+
+    def test_expire_pending_jumps(self):
+        import time
+        game = Game(BOARD_JUMP)
+        game.handle_jump(p(1, 1))
+        game._expire_pending_jumps()
+        assert game.pending_jumps[0].land_at < time.time()
+
+
+class TestIsPendingEmpty:
+    def test_is_pending_returns_false_when_no_moves(self):
+        game = Game(BOARD_ROOKS)
+        assert not game._arbiter.is_pending(p(0, 0))
+
+    def test_returns_legal_destinations(self):
+        game = Game(BOARD_ROOKS)
+        moves = game.get_legal_moves(p(0, 0))
+        assert p(0, 1) in moves
+        assert p(0, 2) in moves
+        assert p(1, 0) in moves
+
+    def test_returns_empty_for_empty_cell(self):
+        game = Game(BOARD_ROOKS)
+        assert game.get_legal_moves(p(0, 1)) == []
+
+    def test_excludes_friendly_fire(self):
+        board = [['wR', 'wK']]
+        game = Game(board)
+        moves = game.get_legal_moves(p(0, 0))
+        assert p(0, 1) not in moves
+
+
+class TestHasPiece:
+    def test_returns_true_for_idle_piece(self):
+        game = Game(BOARD_ROOKS)
+        assert game.has_piece(p(0, 0))
+
+    def test_returns_false_for_empty_cell(self):
+        game = Game(BOARD_ROOKS)
+        assert not game.has_piece(p(0, 1))
+
+    def test_returns_false_for_pending_piece(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 2))
+        assert not game.has_piece(p(0, 0))
+
+    def test_returns_false_for_cooling_piece(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        assert not game.has_piece(p(0, 1))
+
+    def test_returns_false_out_of_bounds(self):
+        game = Game(BOARD_ROOKS)
+        assert not game.has_piece(p(99, 99))
+
+
+class TestGameSnapshot:
+    def test_get_game_snapshot_has_player_names(self):
+        from kungfu_chess.model.player import Player
+        from kungfu_chess.shared.constants import Color
+        black = Player("Alice", Color.BLACK)
+        white = Player("Bob", Color.WHITE)
+        game = Game(BOARD_ROOKS, black, white)
+        snap = game.get_game_snapshot()
+        assert snap.black.name == "Alice"
+        assert snap.white.name == "Bob"
+
+    def test_get_game_snapshot_score_starts_zero(self):
+        game = Game(BOARD_ROOKS)
+        snap = game.get_game_snapshot()
+        assert snap.black.score == 0
+        assert snap.white.score == 0
+
+    def test_get_game_snapshot_records_capture(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(2, 0))
+        game.pending_moves[0].arrive_at = time.time() - 1
+        game.execute_pending_moves()
+        snap = game.get_game_snapshot()
+        assert snap.white.score == 5  # wR captured bR
+
+
+class TestScoreTracker:
+    def test_record_move_adds_entry(self):
+        from kungfu_chess.realtime.score_tracker import ScoreTracker
+        from kungfu_chess.model.player import Player
+        from kungfu_chess.shared.constants import Color, PieceType
+        tracker = ScoreTracker(Player("X", Color.WHITE))
+        tracker.record_move(PieceType.ROOK, p(0, 0), p(0, 2))
+        assert len(tracker.moves) == 1
+        assert 'R' in tracker.moves[0][1]
+
+    def test_record_capture_updates_score(self):
+        from kungfu_chess.realtime.score_tracker import ScoreTracker
+        from kungfu_chess.model.player import Player
+        from kungfu_chess.shared.constants import Color, PieceType
+        tracker = ScoreTracker(Player("X", Color.WHITE))
+        tracker.record_capture(PieceType.QUEEN)
+        assert tracker.score == 9
+        assert PieceType.QUEEN in tracker.captured
+
+    def test_captured_returns_copy(self):
+        from kungfu_chess.realtime.score_tracker import ScoreTracker
+        from kungfu_chess.model.player import Player
+        from kungfu_chess.shared.constants import Color, PieceType
+        tracker = ScoreTracker(Player("X", Color.WHITE))
+        tracker.record_capture(PieceType.PAWN)
+        captured = tracker.captured
+        captured.clear()
+        assert len(tracker.captured) == 1
+
+
+class TestInvalidBoardError:
+    def test_stores_errors(self):
+        from kungfu_chess.shared.exceptions import InvalidBoardError
+        err = InvalidBoardError(["e1", "e2"])
+        assert err.errors == ["e1", "e2"]
+
+    def test_message_contains_errors(self):
+        from kungfu_chess.shared.exceptions import InvalidBoardError
+        err = InvalidBoardError(["bad_token"])
+        assert "bad_token" in str(err)
+
+
+class TestKnightScheduleMove:
+    def test_knight_schedules_single_step(self):
+        board = [['wN', '.', '.'],
+                 ['.', '.', '.'],
+                 ['.', 'bR', '.']]
+        game = Game(board)
+        game.request_move(p(0, 0), p(2, 1))
+        assert len(game.pending_moves) == 1
+        assert game.pending_moves[0].end == p(2, 1)
+
     def test_get_snapshot_reflects_board(self):
         from kungfu_chess.shared.dto import PieceSnapshot
         from kungfu_chess.shared.constants import PieceType, Color

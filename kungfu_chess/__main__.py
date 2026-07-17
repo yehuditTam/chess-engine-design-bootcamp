@@ -1,11 +1,10 @@
-import sys
+import sys  # pragma: no cover
 
 if "--gui" in sys.argv:
     from kungfu_chess.realtime.game_engine import GameEngine
     from kungfu_chess.input.controller import Controller
     from kungfu_chess.model.position import Position
     from kungfu_chess.view.image_view import ImageView
-    from kungfu_chess.shared.constants import Color
     import cv2
 
     _DEFAULT_BOARD = [

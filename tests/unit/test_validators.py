@@ -2,7 +2,7 @@ import pytest
 from kungfu_chess.model.board import Board
 from kungfu_chess.model.position import Position
 from kungfu_chess.rules.rule_engine import RuleEngine
-from kungfu_chess.shared.validators import validate_board, ValidationError
+from kungfu_chess.shared.validators import validate_board
 from kungfu_chess.shared.exceptions import OutOfBoundsError, BlockedPathError, FriendlyFireError
 
 
@@ -27,56 +27,56 @@ class TestMoveValidator:
     def test_legal_rook_move(self):
         v, board = make_validator(SIMPLE_BOARD)
         piece = board.grid[1][1]
-        assert v.is_legal(p(1,1), p(1,3), piece)
+        assert v.is_legal(p(1, 1), p(1, 3), piece)
 
     def test_rook_blocked(self):
         v, board = make_validator([['wR', 'wN', '.', '.']])
         piece = board.grid[0][0]
         with pytest.raises(BlockedPathError):
-            v.is_legal(p(0,0), p(0,3), piece)
+            v.is_legal(p(0, 0), p(0, 3), piece)
 
     def test_capture_enemy(self):
         v, board = make_validator(SIMPLE_BOARD)
         piece = board.grid[1][1]
-        assert v.is_legal(p(1,1), p(3,1), piece)
+        assert v.is_legal(p(1, 1), p(3, 1), piece)
 
     def test_cannot_capture_own(self):
         v, board = make_validator([['wR', '.', 'wK', '.']])
         piece = board.grid[0][0]
         with pytest.raises(FriendlyFireError):
-            v.is_legal(p(0,0), p(0,2), piece)
+            v.is_legal(p(0, 0), p(0, 2), piece)
 
     def test_out_of_bounds(self):
         v, board = make_validator(SIMPLE_BOARD)
         piece = board.grid[1][1]
         with pytest.raises(OutOfBoundsError):
-            v.is_legal(p(1,1), p(10,10), piece)
+            v.is_legal(p(1, 1), p(10, 10), piece)
 
     def test_move_to_same_cell_illegal(self):
         v, board = make_validator(SIMPLE_BOARD)
         piece = board.grid[1][1]  # wR
         with pytest.raises(Exception):
-            v.is_legal(p(1,1), p(1,1), piece)
+            v.is_legal(p(1, 1), p(1, 1), piece)
 
     def test_clear_horizontal(self):
         v, _ = make_validator(SIMPLE_BOARD)
-        assert v._is_path_clear(p(1,1), p(1,3))
+        assert v._is_path_clear(p(1, 1), p(1, 3))
 
     def test_blocked_horizontal(self):
         v, _ = make_validator([['wR', 'wN', '.', '.']])
-        assert not v._is_path_clear(p(0,0), p(0,3))
+        assert not v._is_path_clear(p(0, 0), p(0, 3))
 
     def test_clear_vertical(self):
         v, _ = make_validator([['.', '.'], ['.', '.'], ['.', '.'], ['.', '.']])
-        assert v._is_path_clear(p(0,1), p(3,1))
+        assert v._is_path_clear(p(0, 1), p(3, 1))
 
     def test_blocked_vertical(self):
         v, _ = make_validator([['.'], ['wR'], ['.'], ['.']])
-        assert not v._is_path_clear(p(0,0), p(3,0))
+        assert not v._is_path_clear(p(0, 0), p(3, 0))
 
     def test_clear_diagonal(self):
         v, _ = make_validator([['.', '.', '.'], ['.', '.', '.'], ['.', '.', '.']])
-        assert v._is_path_clear(p(0,0), p(2,2))
+        assert v._is_path_clear(p(0, 0), p(2, 2))
 
 
 class TestValidateBoard:
@@ -84,7 +84,7 @@ class TestValidateBoard:
         assert validate_board([['wK', '.'], ['.', 'bK']]) == []
 
     def test_all_dots(self):
-        assert validate_board([['.','.'],['.','.']]) == []
+        assert validate_board([['.', '.'], ['.', '.']]) == []
 
     def test_single_cell(self):
         assert validate_board([['wQ']]) == []

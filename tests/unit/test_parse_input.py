@@ -1,7 +1,10 @@
 import pytest
 from kungfu_chess.io.board_parser import parse_input
+from kungfu_chess.io.board_parser import load_board_csv, TextInputParser
 from unittest.mock import patch
 import io
+import tempfile
+import os
 
 
 class TestParseInput:
@@ -76,3 +79,37 @@ class TestMain:
         out = capsys.readouterr().out
         assert ". . wR" in out
 
+
+class TestLoadBoardCsv:
+    def test_loads_pieces_correctly(self):
+        content = "RW,PB,.\n.,KB,.\n"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            f.write(content)
+            path = f.name
+        try:
+            rows = load_board_csv(path)
+            assert rows[0] == ['wR', 'bP', '.']
+            assert rows[1] == ['.', 'bK', '.']
+        finally:
+            os.unlink(path)
+
+    def test_empty_cells_become_dots(self):
+        content = ".,.,KW\n"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            f.write(content)
+            path = f.name
+        try:
+            rows = load_board_csv(path)
+            assert rows[0][0] == '.'
+            assert rows[0][1] == '.'
+            assert rows[0][2] == 'wK'
+        finally:
+            os.unlink(path)
+
+
+class TestTextInputParser:
+    def test_parse_returns_board_and_commands(self):
+        raw = "Board:\nwK .\nCommands:\nprint board\n"
+        board, cmds = TextInputParser().parse(raw)
+        assert board == [['wK', '.']]
+        assert cmds == ['print board']

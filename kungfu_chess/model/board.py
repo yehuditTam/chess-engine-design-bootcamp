@@ -9,12 +9,14 @@ from kungfu_chess.shared.dto import PieceSnapshot, BoardSnapshot
 from kungfu_chess.shared.exceptions import InvalidMoveError
 
 _STRATEGY_MAP = {
-    PieceType.KING:   lambda color, start_row, promotion_row: KingStrategy(),
-    PieceType.ROOK:   lambda color, start_row, promotion_row: RookStrategy(),
+    PieceType.KING: lambda color, start_row, promotion_row: KingStrategy(),
+    PieceType.ROOK: lambda color, start_row, promotion_row: RookStrategy(),
     PieceType.BISHOP: lambda color, start_row, promotion_row: BishopStrategy(),
-    PieceType.QUEEN:  lambda color, start_row, promotion_row: QueenStrategy(),
+    PieceType.QUEEN: lambda color, start_row, promotion_row: QueenStrategy(),
     PieceType.KNIGHT: lambda color, start_row, promotion_row: KnightStrategy(),
-    PieceType.PAWN:   lambda color, start_row, promotion_row: PawnStrategy(color, start_row, promotion_row),
+    PieceType.PAWN: lambda color, start_row, promotion_row: PawnStrategy(
+        color, start_row, promotion_row
+    ),
 }
 
 

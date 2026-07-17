@@ -1,7 +1,6 @@
 import pytest
 from kungfu_chess.model.board import Board
 from kungfu_chess.shared.constants import PieceType, Color
-from kungfu_chess.shared.dto import PieceSnapshot
 
 
 SIMPLE_BOARD = [
@@ -12,13 +11,9 @@ SIMPLE_BOARD = [
 ]
 
 
-def make_board(rows):
-    return Board(rows)
-
-
 class TestBoardParsing:
     def test_empty_cell_is_none(self):
-        board = make_board([['.', '.'],['.', '.']])
+        board = make_board([['.', '.'], ['.', '.']])
         assert board.grid[0][0] is None
 
     def test_piece_parsed_correctly(self):
@@ -57,26 +52,24 @@ class TestRemovePiece:
 class TestInBounds:
     def test_valid_cell_is_in_bounds(self):
         board = make_board(SIMPLE_BOARD)
-        assert board.in_bounds(0, 0) is True
-        assert board.in_bounds(3, 3) is True
+        assert board.in_bounds(0, 0)
+        assert board.in_bounds(3, 3)
 
     def test_out_of_bounds_cells(self):
         board = make_board(SIMPLE_BOARD)
-        assert board.in_bounds(-1, 0) is False
-        assert board.in_bounds(0, 4) is False
-        assert board.in_bounds(4, 0) is False
-
-
+        assert not board.in_bounds(-1, 0)
+        assert not board.in_bounds(0, 4)
+        assert not board.in_bounds(4, 0)
 
     def test_piece_moves_to_target(self):
         board = make_board(SIMPLE_BOARD)
-        board.move_piece((1,1), (1,3))
+        board.move_piece((1, 1), (1, 3))
         assert board.grid[1][3] is not None
         assert board.grid[1][1] is None
 
     def test_capture_replaces_target(self):
         board = make_board(SIMPLE_BOARD)
-        board.move_piece((1,1), (3,3))
+        board.move_piece((1, 1), (3, 3))
         assert board.grid[3][3].color == Color.WHITE
         assert board.grid[1][1] is None
 
