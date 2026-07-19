@@ -3,6 +3,10 @@ from kungfu_chess.model.board import Board
 from kungfu_chess.shared.constants import PieceType, Color
 
 
+def make_board(rows):
+    return Board(rows)
+
+
 SIMPLE_BOARD = [
     ['.', '.', '.', '.'],
     ['.', 'wR', '.', '.'],
