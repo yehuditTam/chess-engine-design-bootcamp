@@ -50,18 +50,33 @@ class ImageView(IRenderer):
         self._loader = sprite_loader or SpriteLoader()
         self._board_renderer = board_renderer or BoardRenderer(self._loader)
         self._panel_renderer = PanelRenderer(self._loader)
-        self._board_x = PANEL_PAD + PANEL_W + PANEL_PAD + LABEL_PAD
-        self._board_y = TOP_BAR + LABEL_PAD
-        self._scale = 1.0
         self._start_time = time.time()
         self._stop_time: float = None
+
+    def _scale(self) -> float:
+        """Current scale factor based on actual window size."""
+        try:
+            rect = cv2.getWindowImageRect(_WINDOW_TITLE)
+            if rect[2] > 0 and rect[3] > 0:
+                return min(rect[2] / _WIN_W, rect[3] / _WIN_H)
+        except Exception:
+            pass
+        return 1.0
+
+    @property
+    def _board_x(self):
+        return PANEL_PAD + PANEL_W + PANEL_PAD + LABEL_PAD
+
+    @property
+    def _board_y(self):
+        return TOP_BAR + LABEL_PAD
 
     def reset_timer(self):
         self._start_time = time.time()
         self._stop_time = None
 
     def get_board_offset(self) -> tuple:
-        s = self._scale
+        s = self._scale()
         return int(self._board_x * s), int(self._board_y * s), int(TILE_SIZE * s)
 
     def render(self, board: BoardSnapshot,
@@ -96,10 +111,12 @@ class ImageView(IRenderer):
                 black_name, black_score, white_name, white_score, elapsed
             )
         self._draw_stopwatch(canvas)
-        self._scale = self._get_scale(canvas.shape[1], canvas.shape[0])
-        if self._scale != 1.0:
+        s = self._scale()
+        if s != 1.0:
             display = cv2.resize(
-                canvas, None, fx=self._scale, fy=self._scale, interpolation=cv2.INTER_AREA
+                canvas,
+                (int(_WIN_W * s), int(_WIN_H * s)),
+                interpolation=cv2.INTER_LINEAR
             )
         else:
             display = canvas

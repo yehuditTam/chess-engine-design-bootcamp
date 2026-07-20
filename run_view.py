@@ -4,7 +4,7 @@ from kungfu_chess.model.player import Player
 from kungfu_chess.shared.constants import Color
 from kungfu_chess.io.board_parser import load_board_csv
 from kungfu_chess.view.view_controller import ViewController
-from kungfu_chess.view.image_view import ImageView
+from kungfu_chess.view.image_view import ImageView, _WIN_W, _WIN_H
 from kungfu_chess.view.name_dialog import ask_player_names
 from kungfu_chess.view.sound_player import init_sounds
 from kungfu_chess.shared.bus import EventBus
@@ -47,8 +47,12 @@ def on_click(event, mx, my, flags, param):
     vc.on_mouse(event, mx, my)
 
 
-cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_AUTOSIZE)
+cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
 game.execute_pending_moves()
+snap = game.get_game_snapshot()
+# Set initial window size to fit screen
+_init_scale = ImageView._get_scale(_WIN_W, _WIN_H)
+cv2.resizeWindow(WINDOW_TITLE, int(_WIN_W * _init_scale), int(_WIN_H * _init_scale))
 snap = game.get_game_snapshot()
 view.render(snap.board, snap.black.name, snap.white.name, snap.black.score, snap.white.score,
             list(snap.black.moves), list(snap.white.moves),
