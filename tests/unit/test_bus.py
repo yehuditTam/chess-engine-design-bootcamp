@@ -45,7 +45,7 @@ class TestEventBusSubscribePublish:
     def test_no_subscribers_publish_does_not_raise(self):
         bus = EventBus()
         bus.publish(EventType.PIECE_CAPTURED, by_color=Color.WHITE,
-                    captured_ptype=PieceType.PAWN)  # should not raise
+                    captured_ptype=PieceType.PAWN)
 
     def test_publish_passes_kwargs_correctly(self):
         bus = EventBus()
@@ -61,7 +61,62 @@ class TestEventBusSubscribePublish:
         bus.subscribe(EventType.PIECE_JUMPED, cb)
         bus.subscribe(EventType.PIECE_JUMPED, cb)
         bus.publish(EventType.PIECE_JUMPED, color=Color.WHITE, cell=p(0, 0))
-        assert len(count) == 2  # both registrations fire
+        assert len(count) == 2
+
+    def test_clear_removes_all_subscribers(self):
+        bus = EventBus()
+        called = []
+        bus.subscribe(EventType.PIECE_MOVED, lambda **kw: called.append(1))
+        bus.clear()
+        bus.publish(EventType.PIECE_MOVED, color=Color.WHITE, ptype=PieceType.ROOK,
+                    start=p(0, 0), end=p(0, 1))
+        assert called == []
+
+    def test_game_started_published_on_first_move(self):
+        bus = EventBus()
+        started = []
+        bus.subscribe(EventType.GAME_STARTED, lambda **_: started.append(1))
+        game = GameEngine([['wR', '.', 'bK']], bus=bus)
+        game.request_move(p(0, 0), p(0, 1))
+        assert len(started) == 1
+
+    def test_game_started_published_only_once(self):
+        bus = EventBus()
+        started = []
+        bus.subscribe(EventType.GAME_STARTED, lambda **_: started.append(1))
+        game = GameEngine([['wR', '.', '.', 'bK']], bus=bus)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = __import__('time').time() - 1
+        game.execute_pending_moves()
+        game.pending_cooldowns[0].ready_at = __import__('time').time() - 1
+        game.execute_pending_moves()
+        game.request_move(p(0, 1), p(0, 2))
+        assert len(started) == 1
+
+    def test_score_updated_published_on_capture(self):
+        bus = EventBus()
+        scores = []
+        bus.subscribe(EventType.SCORE_UPDATED, lambda **kw: scores.append(kw))
+        game = GameEngine([['wR', '.', 'bR', 'bK']], bus=bus)
+        game.request_move(p(0, 0), p(0, 2))
+        game.pending_moves[0].arrive_at = __import__('time').time() - 1
+        game.execute_pending_moves()
+        assert len(scores) == 1
+        assert scores[0]["color"] == Color.WHITE
+        assert scores[0]["score"] == 5
+        assert scores[0]["captured_ptype"] == PieceType.ROOK
+
+    def test_move_logged_published_on_arrival(self):
+        bus = EventBus()
+        logs = []
+        bus.subscribe(EventType.MOVE_LOGGED, lambda **kw: logs.append(kw))
+        game = GameEngine([['wR', '.', 'bK']], bus=bus)
+        game.request_move(p(0, 0), p(0, 1))
+        game.pending_moves[0].arrive_at = __import__('time').time() - 1
+        game.execute_pending_moves()
+        assert len(logs) == 1
+        assert logs[0]["color"] == Color.WHITE
+        assert 'R' in logs[0]["move_str"]
 
 
 # ---------------------------------------------------------------------------

@@ -557,7 +557,7 @@ class TestScoreTracker:
         from kungfu_chess.model.player import Player
         from kungfu_chess.shared.constants import Color, PieceType
         tracker = ScoreTracker(Player("X", Color.WHITE))
-        tracker.record_move(PieceType.ROOK, p(0, 0), p(0, 2))
+        tracker.record_move(PieceType.ROOK, p(0, 0), p(0, 2), elapsed_secs=5.0)
         assert len(tracker.moves) == 1
         assert 'R' in tracker.moves[0][1]
 

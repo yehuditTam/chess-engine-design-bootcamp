@@ -8,6 +8,9 @@ class EventType(Enum):
     PIECE_CAPTURED = auto()
     PIECE_JUMPED = auto()
     GAME_OVER = auto()
+    GAME_STARTED = auto()
+    SCORE_UPDATED = auto()   # kwargs: color, score, captured_ptype
+    MOVE_LOGGED = auto()     # kwargs: color, time_str, move_str
 
 
 class EventBus:
@@ -15,17 +18,18 @@ class EventBus:
 
     Subscribers register a callable per EventType.
     Publishers call publish() and all registered callbacks are invoked immediately.
-    Thread-safety is intentionally out of scope for this single-process stage.
     """
 
     def __init__(self):
         self._subscribers: dict[EventType, list[Callable]] = defaultdict(list)
 
     def subscribe(self, event_type: EventType, callback: Callable) -> None:
-        """Register *callback* to be called whenever *event_type* is published."""
         self._subscribers[event_type].append(callback)
 
     def publish(self, event_type: EventType, **data) -> None:
-        """Invoke all callbacks registered for *event_type*, passing **data as kwargs."""
         for cb in self._subscribers[event_type]:
             cb(**data)
+
+    def clear(self) -> None:
+        """Remove all subscriptions — call before restarting a game on the same bus."""
+        self._subscribers.clear()

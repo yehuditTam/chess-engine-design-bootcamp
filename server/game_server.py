@@ -19,6 +19,7 @@ from kungfu_chess.realtime.game_engine import GameEngine
 from kungfu_chess.io.board_parser import load_board_csv
 from kungfu_chess.model.player import Player
 from kungfu_chess.shared.constants import Color
+from kungfu_chess.shared.bus import EventBus, EventType
 from server.serializer import snapshot_to_dict
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [SERVER] %(message)s")
@@ -26,16 +27,19 @@ log = logging.getLogger(__name__)
 
 HOST = "localhost"
 PORT = 8765
-TICK_MS = 30          # game loop interval in milliseconds
+TICK_MS = 30
 BOARD_CSV = "assets/board.csv"
 
 
 class GameServer:
     def __init__(self):
-        self._clients: dict[Color, object] = {}   # Color → websocket
-        self._usernames: dict[Color, str] = {}    # Color → username
+        self._clients: dict[Color, object] = {}
+        self._usernames: dict[Color, str] = {}
         self._game: GameEngine | None = None
-        self._lock = asyncio.Lock()               # protect shared game state
+        self._lock = asyncio.Lock()
+        self._pending_events: list = []
+        self._game_start_time = 0.0
+        self._winner_name = ""
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -45,10 +49,10 @@ class GameServer:
         import websockets
         log.info(f"Listening on ws://{HOST}:{PORT}")
         async with websockets.serve(self._on_connect, HOST, PORT):
-            await asyncio.Future()   # run forever
+            await asyncio.Future()
 
     # ------------------------------------------------------------------
-    # Connection handler — called once per client
+    # Connection handler
     # ------------------------------------------------------------------
 
     async def _on_connect(self, ws):
@@ -61,7 +65,6 @@ class GameServer:
         log.info(f"{color.name} connected")
         await ws.send(json.dumps({"type": "assigned", "color": color.value}))
 
-        # wait for join message to get username
         try:
             raw = await ws.recv()
             msg = json.loads(raw)
@@ -87,7 +90,7 @@ class GameServer:
             log.info(f"{color.name} left")
 
     # ------------------------------------------------------------------
-    # Assign WHITE to first joiner, BLACK to second
+    # Assign colors
     # ------------------------------------------------------------------
 
     async def _assign_color(self, ws) -> Color | None:
@@ -98,16 +101,20 @@ class GameServer:
             if Color.BLACK not in self._clients:
                 self._clients[Color.BLACK] = ws
                 return Color.BLACK
-            return None   # server full
+            return None
 
     # ------------------------------------------------------------------
-    # Start game + launch the tick loop
+    # Start game
     # ------------------------------------------------------------------
 
     async def _start_game(self):
         rows = load_board_csv(BOARD_CSV)
-        from kungfu_chess.shared.bus import EventBus, EventType
         bus = EventBus()
+        self._pending_events = []
+        self._game_start_time = 0.0
+        self._winner_name = ""
+
+        # Collect winner name on game over
         bus.subscribe(
             EventType.GAME_OVER,
             lambda winner_color, **_: setattr(
@@ -118,19 +125,34 @@ class GameServer:
                 )
             )
         )
+
+        # Queue every bus event for broadcast to clients
+        for ev_name, ev_type in (
+            ("game_started",    EventType.GAME_STARTED),
+            ("piece_moved",     EventType.PIECE_MOVED),
+            ("piece_captured",  EventType.PIECE_CAPTURED),
+            ("piece_jumped",    EventType.PIECE_JUMPED),
+            ("score_updated",   EventType.SCORE_UPDATED),
+            ("move_logged",     EventType.MOVE_LOGGED),
+            ("game_over",       EventType.GAME_OVER),
+        ):
+            def _make_handler(name):
+                def _h(**_kw):
+                    self._pending_events.append({"type": "event", "name": name})
+                return _h
+            bus.subscribe(ev_type, _make_handler(ev_name))
+
         self._game = GameEngine(
             rows,
             black=Player(self._usernames.get(Color.BLACK, "Black"), Color.BLACK),
             white=Player(self._usernames.get(Color.WHITE, "White"), Color.WHITE),
             bus=bus,
         )
-        self._game_start_time = 0.0
-        self._winner_name = ""
         log.info("Game started")
         asyncio.create_task(self._game_loop())
 
     # ------------------------------------------------------------------
-    # Game loop — runs every TICK_MS, broadcasts state
+    # Game loop
     # ------------------------------------------------------------------
 
     async def _game_loop(self):
@@ -144,23 +166,30 @@ class GameServer:
                     _time.time() - self._game_start_time
                     if self._game_start_time > 0.0 else 0.0
                 )
-                msg = json.dumps(snapshot_to_dict(snap, False, elapsed, ""))
-            await self._broadcast(msg)
+                state_msg = json.dumps(snapshot_to_dict(snap, False, elapsed, ""))
+                events, self._pending_events = self._pending_events, []
+
+            await self._broadcast(state_msg)
+            for ev in events:
+                await self._broadcast(json.dumps(ev))
             await asyncio.sleep(TICK_MS / 1000)
 
-        # send final game-over state
+        # final game-over state
         if self._game is not None:
             snap = self._game.get_game_snapshot()
             elapsed = (
                 _time.time() - self._game_start_time
                 if self._game_start_time > 0.0 else 0.0
             )
-            msg = json.dumps(snapshot_to_dict(snap, True, elapsed, self._winner_name))
-            await self._broadcast(msg)
+            state_msg = json.dumps(snapshot_to_dict(snap, True, elapsed, self._winner_name))
+            events, self._pending_events = self._pending_events, []
+            await self._broadcast(state_msg)
+            for ev in events:
+                await self._broadcast(json.dumps(ev))
         log.info("Game over — loop stopped")
 
     # ------------------------------------------------------------------
-    # Handle a message from a client
+    # Handle client messages
     # ------------------------------------------------------------------
 
     async def _handle_message(self, raw: str, color: Color):
@@ -197,7 +226,7 @@ class GameServer:
                     await ws.send(reply)
 
     # ------------------------------------------------------------------
-    # Broadcast to all connected clients
+    # Broadcast
     # ------------------------------------------------------------------
 
     async def _broadcast(self, msg: str):
@@ -205,7 +234,7 @@ class GameServer:
             try:
                 await ws.send(msg)
             except Exception:
-                pass   # client may have disconnected
+                pass
 
 
 if __name__ == "__main__":

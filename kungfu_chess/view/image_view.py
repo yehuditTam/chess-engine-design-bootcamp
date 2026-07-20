@@ -38,10 +38,16 @@ _FONT_SMALL = 0.65
 _FONT_THICK_LARGE = 3
 _FONT_THICK_MED = 2
 _FONT_THICK_SMALL = 1
-_COLOR_WINNER = (0, 255, 160)    # bright green for winner name
+_COLOR_WINNER = (0, 255, 160)
 _COLOR_SUMMARY = (220, 220, 220)
 
-# --- misc ---
+# --- flash animation ---
+_FLASH_START_COLOR = (0, 220, 80)    # green — game start
+_FLASH_OVER_COLOR = (0, 0, 220)      # red — game over
+_FLASH_START_DURATION = 0.6
+_FLASH_OVER_DURATION = 0.8
+_FLASH_BORDER_THICKNESS = 6
+
 _WINDOW_TITLE = WINDOW_TITLE
 
 
@@ -52,9 +58,11 @@ class ImageView(IRenderer):
         self._panel_renderer = PanelRenderer(self._loader)
         self._start_time: float = None
         self._stop_time: float = None
+        self._flash_until: float = 0.0
+        self._flash_duration: float = 1.0
+        self._flash_color: tuple = _FLASH_START_COLOR
 
     def _scale(self) -> float:
-        """Current scale factor based on actual window size."""
         try:
             rect = cv2.getWindowImageRect(_WINDOW_TITLE)
             if rect[2] > 0 and rect[3] > 0:
@@ -78,6 +86,19 @@ class ImageView(IRenderer):
     def reset_timer(self):
         self._start_time = None
         self._stop_time = None
+        self._flash_until = 0.0
+
+    def trigger_game_start_animation(self):
+        """Fading green border flash to signal game start."""
+        self._flash_color = _FLASH_START_COLOR
+        self._flash_duration = _FLASH_START_DURATION
+        self._flash_until = time.time() + _FLASH_START_DURATION
+
+    def trigger_game_over_animation(self):
+        """Fading red border flash to signal game end."""
+        self._flash_color = _FLASH_OVER_COLOR
+        self._flash_duration = _FLASH_OVER_DURATION
+        self._flash_until = time.time() + _FLASH_OVER_DURATION
 
     def get_board_offset(self) -> tuple:
         s = self._scale()
@@ -117,6 +138,7 @@ class ImageView(IRenderer):
                 black_name, black_score, white_name, white_score, elapsed
             )
         self._draw_stopwatch(canvas)
+        self._draw_flash(canvas)
         s = self._scale()
         if s != 1.0:
             display = cv2.resize(
@@ -127,6 +149,15 @@ class ImageView(IRenderer):
         else:
             display = canvas
         cv2.imshow(_WINDOW_TITLE, display)
+
+    def _draw_flash(self, canvas):
+        remaining = self._flash_until - time.time()
+        if remaining <= 0:
+            return
+        # Fade from full brightness to zero over the duration
+        alpha = remaining / self._flash_duration  # 1.0 → 0.0
+        thickness = max(2, int(_FLASH_BORDER_THICKNESS * alpha))
+        cv2.rectangle(canvas, (2, 2), (_WIN_W - 2, _WIN_H - 2), self._flash_color, thickness)
 
     def _draw_stopwatch(self, canvas):
         if self._start_time is None:
@@ -158,7 +189,6 @@ class ImageView(IRenderer):
         panel_h = LABEL_PAD + _BOARD_PX + LABEL_PAD
         black_is_local = (local_color is not None and local_color.lower() in ("black", "b"))
         white_is_local = (local_color is not None and local_color.lower() in ("white", "w"))
-        # Each panel shows pieces captured BY that player (matches their score)
         self._panel_renderer.draw(
             canvas, PANEL_PAD, self._board_y - LABEL_PAD,
             PANEL_W, panel_h, black_name, "Black", black_score, black_moves, black_captured,
@@ -223,14 +253,10 @@ class ImageView(IRenderer):
         )
         cy += 30
         summary = f"{black_name}  {black_score} pts      {white_name}  {white_score} pts"
-        self._put_centered(
-            canvas, summary, cy, _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY
-        )
+        self._put_centered(canvas, summary, cy, _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY)
         cy += 44
-        self._put_centered(
-            canvas, "Press R to restart  |  ESC to exit",
-            cy, _FONT_SMALL, _FONT_THICK_SMALL, _TEXT_LIGHT
-        )
+        self._put_centered(canvas, "Press R to restart  |  ESC to exit",
+                           cy, _FONT_SMALL, _FONT_THICK_SMALL, _TEXT_LIGHT)
 
     @staticmethod
     def _put_centered(canvas, txt, cy, scale, thick, color):

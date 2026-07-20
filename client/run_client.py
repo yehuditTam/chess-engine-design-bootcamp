@@ -6,6 +6,7 @@ Usage:
 """
 
 import cv2
+import time
 from client.server_bridge import ServerBridge
 from kungfu_chess.view.image_view import ImageView
 from kungfu_chess.view.view_controller import ViewController
@@ -13,16 +14,19 @@ from kungfu_chess.view.sound_player import _play as _play_sound
 from kungfu_chess.shared.ui_constants import WINDOW_TITLE, KEY_ESC
 from kungfu_chess.model.position import Position
 
+# Map bus event names → sound files
+_EVENT_SOUNDS = {
+    "piece_moved":    "click.mp3",
+    "piece_captured": "eat.mp3",
+    "piece_jumped":   "jump.mp3",
+    "game_over":      "game_over.mp3",
+}
+
 
 class _RemoteGame:
     """
     Thin adapter that lets ViewController talk to the server
     instead of a local GameEngine.
-
-    ViewController expects an object with:
-        has_piece(pos), get_legal_moves(pos),
-        request_move(start, end), handle_jump(cell),
-        is_game_over
     """
 
     def __init__(self, bridge: ServerBridge, local_color):
@@ -48,7 +52,7 @@ class _RemoteGame:
 
     def get_legal_moves(self, start: Position) -> list:
         self._bridge.request_legal_moves(start)
-        return []  # response arrives asynchronously via poll_legal_moves()
+        return []
 
     def request_move(self, start: Position, end: Position):
         from kungfu_chess.shared.dto import MoveResult
@@ -70,10 +74,6 @@ def main():
     remote_game = _RemoteGame(bridge, bridge.color())
     vc = ViewController(remote_game, view)
     winner_name = ""
-    _prev_total_moves = 0
-    _prev_total_captured = 0
-    _prev_total_airborne = 0
-    _prev_game_over = False
 
     from kungfu_chess.view.image_view import _WIN_W, _WIN_H
     cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
@@ -86,38 +86,27 @@ def main():
     cv2.setMouseCallback(WINDOW_TITLE, on_click)
 
     while True:
+        # --- process incoming state ---
         state = bridge.poll_state()
         if state is not None:
             snap, game_over, game_start_time, w_name = state
             remote_game.update(snap, game_over)
             if game_start_time > 0 and view._start_time is None:
-                import time
                 view._start_time = time.time() - game_start_time
             if w_name:
                 winner_name = w_name
 
-            total_moves = len(snap.black.moves) + len(snap.white.moves)
-            total_captured = len(snap.black.captured) + len(snap.white.captured)
-            total_airborne = sum(
-                1 for r in range(snap.board.rows) for c in range(snap.board.cols)
-                if (p := snap.board.get(r, c)) is not None and p.is_airborne
-            )
-            if total_captured > _prev_total_captured:
-                _play_sound("eat.mp3")
-            elif total_airborne > _prev_total_airborne:
-                _play_sound("jump.mp3")
-            elif total_moves > _prev_total_moves:
-                _play_sound("click.mp3")
-            if game_over and not _prev_game_over:
-                _play_sound("game_over.mp3")
-            _prev_total_moves = total_moves
-            _prev_total_captured = total_captured
-            _prev_total_airborne = total_airborne
-            _prev_game_over = game_over
-
-        for event in bridge.poll_events():
-            if event.get("type") == "sound":
-                _play_sound(event.get("name", "") + ".mp3")
+        # --- process bus events from server ---
+        for ev in bridge.poll_events():
+            name = ev.get("name", "")
+            if name == "game_started":
+                view.start_timer()
+                view.trigger_game_start_animation()
+            elif name == "game_over":
+                view.trigger_game_over_animation()
+            sound = _EVENT_SOUNDS.get(name)
+            if sound:
+                _play_sound(sound)
 
         legal = bridge.poll_legal_moves()
         if legal is not None:

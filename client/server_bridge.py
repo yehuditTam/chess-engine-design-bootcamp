@@ -132,6 +132,8 @@ class ServerBridge:
             elif d["type"] == "legal_moves":
                 moves = [Position(*m) for m in d["moves"]]
                 self._legal_moves.put(moves)
+            elif d["type"] == "event":
+                self._events.put(d)
             elif d["type"] in ("scores_updated", "move_logged", "sound", "animation"):
                 self._events.put(d)
 

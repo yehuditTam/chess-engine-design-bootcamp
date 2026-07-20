@@ -14,6 +14,7 @@ from kungfu_chess.shared.exceptions import (
 )
 from kungfu_chess.shared.interfaces import IGame
 from kungfu_chess.shared.bus import EventBus, EventType
+import time as _time
 
 
 class GameEngine(IGame):
@@ -30,6 +31,7 @@ class GameEngine(IGame):
             Color.WHITE: ScoreTracker(white),
         }
         self._bus = bus or EventBus()
+        self._game_start_time: float = None
 
     # --- public interface ---
 
@@ -72,17 +74,42 @@ class GameEngine(IGame):
             board=board, black=_player_snap(Color.BLACK), white=_player_snap(Color.WHITE)
         )
 
+    def _elapsed(self) -> float:
+        if self._game_start_time is None:
+            return 0.0
+        return _time.time() - self._game_start_time
+
+    def _ensure_started(self):
+        if self._game_start_time is None:
+            self._game_start_time = _time.time()
+            self._bus.publish(EventType.GAME_STARTED)
+
     def execute_pending_moves(self):
         completed, jump_captures, target, ends = self._arbiter.execute_pending_moves()
         game_over_pending = target is not None
         for (start, end, ptype, moving_color, captured_ptype) in completed:
-            self._trackers[moving_color].record_move(ptype, start, end)
+            elapsed = self._elapsed()
+            time_str, move_str = self._trackers[moving_color].record_move(
+                ptype, start, end, elapsed
+            )
+            self._bus.publish(
+                EventType.MOVE_LOGGED,
+                color=moving_color,
+                time_str=time_str,
+                move_str=move_str,
+            )
             if captured_ptype is not None:
-                self._trackers[moving_color].record_capture(captured_ptype)
+                new_score = self._trackers[moving_color].record_capture(captured_ptype)
                 if not game_over_pending:
                     self._bus.publish(
                         EventType.PIECE_CAPTURED,
                         by_color=moving_color,
+                        captured_ptype=captured_ptype,
+                    )
+                    self._bus.publish(
+                        EventType.SCORE_UPDATED,
+                        color=moving_color,
+                        score=new_score,
                         captured_ptype=captured_ptype,
                     )
             self._bus.publish(
@@ -95,10 +122,16 @@ class GameEngine(IGame):
             if not game_over_pending:
                 self._check_promotion(end)
         for (jumper_color, captured_ptype) in jump_captures:
-            self._trackers[jumper_color].record_capture(captured_ptype)
+            new_score = self._trackers[jumper_color].record_capture(captured_ptype)
             self._bus.publish(
                 EventType.PIECE_CAPTURED,
                 by_color=jumper_color,
+                captured_ptype=captured_ptype,
+            )
+            self._bus.publish(
+                EventType.SCORE_UPDATED,
+                color=jumper_color,
+                score=new_score,
                 captured_ptype=captured_ptype,
             )
         if target is not None:
@@ -115,6 +148,7 @@ class GameEngine(IGame):
             return MoveResult(ok=False, reason="game_over")
         try:
             self._try_move(start, end)
+            self._ensure_started()
             return MoveResult(ok=True)
         except CoolingError:
             return MoveResult(ok=False, reason="invalid_move")
@@ -130,6 +164,7 @@ class GameEngine(IGame):
                     and not self._arbiter.is_pending(cell)
                     and not self._arbiter.is_airborne(cell)):
                 self._arbiter.schedule_jump(cell)
+                self._ensure_started()
                 self._bus.publish(
                     EventType.PIECE_JUMPED,
                     color=piece.color,
