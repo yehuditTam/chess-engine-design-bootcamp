@@ -32,6 +32,7 @@ BOARD_CSV = "assets/board.csv"
 class GameServer:
     def __init__(self):
         self._clients: dict[Color, object] = {}   # Color → websocket
+        self._usernames: dict[Color, str] = {}    # Color → username
         self._game: GameEngine | None = None
         self._lock = asyncio.Lock()               # protect shared game state
 
@@ -58,6 +59,19 @@ class GameServer:
 
         log.info(f"{color.name} connected")
         await ws.send(json.dumps({"type": "assigned", "color": color.value}))
+
+        # wait for join message to get username
+        try:
+            raw = await ws.recv()
+            msg = json.loads(raw)
+            if msg.get("type") != "join":
+                await ws.close()
+                self._clients.pop(color, None)
+                return
+            self._usernames[color] = msg.get("username", color.name)
+        except Exception:
+            self._clients.pop(color, None)
+            return
 
         if len(self._clients) == 2:
             await self._start_game()
@@ -93,8 +107,8 @@ class GameServer:
         rows = load_board_csv(BOARD_CSV)
         self._game = GameEngine(
             rows,
-            black=Player("Black", Color.BLACK),
-            white=Player("White", Color.WHITE),
+            black=Player(self._usernames.get(Color.BLACK, "Black"), Color.BLACK),
+            white=Player(self._usernames.get(Color.WHITE, "White"), Color.WHITE),
         )
         log.info("Game started")
         asyncio.create_task(self._game_loop())

@@ -59,9 +59,10 @@ class _RemoteGame:
 
 
 def main():
+    username = input("Enter username: ").strip()
     bridge = ServerBridge()
     print("Connecting to server...")
-    bridge.start()
+    bridge.start(username)
     print(f"Connected. You are playing as: {bridge.color().name}")
 
     view = ImageView()

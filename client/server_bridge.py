@@ -35,8 +35,9 @@ class ServerBridge:
     # Public API — called from the main (OpenCV) thread
     # ------------------------------------------------------------------
 
-    def start(self):
+    def start(self, username: str = "Player"):
         """Start the background WebSocket thread. Blocks until color is assigned."""
+        self._username = username
         self._thread.start()
         self._assigned.wait()         # wait until server sends "assigned"
 
@@ -88,6 +89,7 @@ class ServerBridge:
         import websockets
         async with websockets.connect(SERVER_URL) as ws:
             self._connected.set()           # unblock start()
+            await ws.send(json.dumps({"type": "join", "username": self._username}))
             # run sender and receiver concurrently
             await asyncio.gather(
                 self._receiver(ws),
