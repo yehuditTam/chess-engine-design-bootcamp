@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 PIECES_DIR = pathlib.Path(__file__).parent.parent.parent / "assets" / "pieces_mine"
-BOARD_PATH = pathlib.Path(__file__).parent.parent.parent / "board.png"
+BOARD_PATH = pathlib.Path(__file__).parent.parent.parent / "assets" / "board.png"
 
 # _STATE_MAP translates PieceState values to sprite folder names so the view
 # stays decoupled from the internal state enum naming.
