@@ -141,7 +141,7 @@ class TestReceiverState:
         ])
         result = bridge.poll_state()
         assert result is not None
-        snap, game_over = result
+        snap, game_over, _, _ = result
         assert game_over is False
 
     def test_poll_state_returns_none_when_empty(self):

@@ -41,6 +41,8 @@ bus.subscribe(
         black_player.name if winner_color.value == 'b' else white_player.name
     )
 )
+bus.subscribe(EventType.PIECE_MOVED, lambda **_: view.start_timer())
+bus.subscribe(EventType.PIECE_JUMPED, lambda **_: view.start_timer())
 
 
 def on_click(event, mx, my, flags, param):

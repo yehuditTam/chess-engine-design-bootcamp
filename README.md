@@ -10,7 +10,7 @@ Supports both local single-machine play and networked two-player mode over WebSo
 
 - **Both players move at the same time** — there are no turns.
 - **Every move takes time** — a piece travels at 1 second per square.
-- **Cooldown** — after arriving, a piece rests for 2 seconds before it can move again.
+- **Cooldown** — after arriving, a piece rests for 5 seconds before it can move again.
 - **Friendly blocking** — a piece stops one square before a cell that a friendly piece will occupy.
 - **Jump** — a piece can leap into the air for 1 second. Any enemy that arrives at its cell during the jump is captured instead. The airborne piece stays put.
 - **Game over** — the first player to capture the opponent's King wins.
@@ -51,6 +51,9 @@ tests/
 pip install -r requirements.txt
 ```
 
+> **Sound on Windows:** sound playback uses the built-in Windows MCI (`winmm`) via
+> `ctypes` — no extra package needed. `playsound` is no longer a dependency.
+
 ---
 
 ## Running
@@ -74,6 +77,8 @@ You will be prompted for a username. The first connection is assigned White, the
 **Mouse controls:**
 - Left click — select a piece, then click destination to move
 - Right click — make the selected piece jump
+
+> The timer starts when the **first move or jump** is made by either player.
 
 ### Local visual mode (single machine, OpenCV window)
 
@@ -142,6 +147,9 @@ python -m pytest tests/ --cov=kungfu_chess --cov=server --cov=client --cov-repor
 Only one color can have pieces in motion at a time.  
 A piece that is pending, airborne, or cooling cannot be selected or moved.
 
+The **timer** displayed at the top starts on the first move or jump and is
+synchronised across both networked clients.
+
 While cooling or airborne, a **circular countdown arc** is drawn around the piece:
 - 🟢 Green arc — cooling down after a move (5 s)
 - 🔵 Cyan arc — airborne after a jump (2 s)
@@ -171,6 +179,8 @@ When the game ends an overlay displays:
 ---
 
 
+
+## WebSocket Protocol
 
 All messages are JSON. Server → client:
 

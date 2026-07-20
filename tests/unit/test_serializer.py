@@ -123,7 +123,8 @@ class TestSnapshotToDict:
 class TestDictToSnapshot:
     def _round_trip(self, snap, game_over=False):
         d = snapshot_to_dict(snap, game_over=game_over)
-        return dict_to_snapshot(d)
+        snap_out, go, _, _ = dict_to_snapshot(d)
+        return snap_out, go
 
     def test_round_trip_game_over(self):
         _, go = self._round_trip(make_snapshot(), game_over=True)
@@ -178,6 +179,6 @@ class TestDictToSnapshot:
         d = snapshot_to_dict(make_snapshot(), game_over=False)
         json_str = json.dumps(d)
         restored = json.loads(json_str)
-        snap, go = dict_to_snapshot(restored)
+        snap, go, _, _ = dict_to_snapshot(restored)
         assert snap.board.get(0, 0).ptype == PieceType.ROOK
         assert go is False

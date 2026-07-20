@@ -14,11 +14,13 @@ _ROW_STRIPE = (230, 230, 230)
 
 # --- layout ---
 _BAR_H = 52
+_BAR_H_LOCAL = 68  # taller bar when "YOU" label is shown
 _NAME_Y = 22
 _PLAYER_Y = 42
-_SCORE_Y = 68
-_DIVIDER_Y = 82
-_HEADER_Y = 96
+_YOU_Y = 60
+_SCORE_Y = 84
+_DIVIDER_Y = 98
+_HEADER_Y = 112
 _MAX_MOVES = 7
 _MOVE_ROW_H = 22
 _CAP_SECTION = 90
@@ -30,20 +32,30 @@ class PanelRenderer:
         self._loader = sprite_loader
 
     def draw(self, canvas: np.ndarray, x: int, y: int, w: int, h: int,
-             player_name: str, color_label: str, score: int, moves: list, captured: list = None):
+             player_name: str, color_label: str, score: int, moves: list, captured: list = None,
+             is_local: bool = False):
         panel = np.full((h, w, 3), _PANEL_BG, dtype=np.uint8)
 
         bar_color = _BAR_BLACK if color_label == "Black" else _BAR_WHITE
         txt_color = _TEXT_LIGHT if color_label == "Black" else _TEXT_DARK
-        cv2.rectangle(panel, (0, 0), (w, _BAR_H), bar_color, -1)
+        bar_h = _BAR_H_LOCAL if is_local else _BAR_H
+        score_y = _SCORE_Y if is_local else _SCORE_Y - 16
+        divider_y = _DIVIDER_Y if is_local else _DIVIDER_Y - 16
+        header_y = _HEADER_Y if is_local else _HEADER_Y - 16
+        cv2.rectangle(panel, (0, 0), (w, bar_h), bar_color, -1)
         cv2.rectangle(panel, (0, 0), (w, h), _PANEL_BORDER, 1)
 
         self._text(panel, color_label, w // 2, _NAME_Y, 0.6, txt_color, 2)
         self._text(panel, player_name, w // 2, _PLAYER_Y, 0.48, txt_color)
-        self._text(panel, f"Score: {score}", w // 2, _SCORE_Y, 0.52, _GOLD, 2)
-        cv2.line(panel, (PANEL_PAD, _DIVIDER_Y), (w - PANEL_PAD, _DIVIDER_Y), _PANEL_BORDER, 1)
 
-        hy = _HEADER_Y
+        if is_local:
+            self._text(panel, ">> YOU", w // 2, _YOU_Y, 0.45, (0, 215, 255), bold=True)
+            cv2.rectangle(panel, (0, 0), (w - 1, h - 1), (0, 215, 255), 3)
+
+        self._text(panel, f"Score: {score}", w // 2, score_y, 0.52, _GOLD, 2)
+        cv2.line(panel, (PANEL_PAD, divider_y), (w - PANEL_PAD, divider_y), _PANEL_BORDER, 1)
+
+        hy = header_y
         self._text(panel, "Time", w // 4, hy, 0.45, _TEXT_DARK, 2)
         self._text(panel, "Move", 3 * w // 4, hy, 0.45, _TEXT_DARK, 2)
         cv2.line(panel, (PANEL_PAD, hy + 14), (w - PANEL_PAD, hy + 14), _PANEL_BORDER, 1)
@@ -69,8 +81,8 @@ class PanelRenderer:
     def _draw_captured_icons(self, panel, captured, w, top_y, color_label):
         if not captured or self._loader is None:
             return
-        # Pieces shown are those lost by this player — they are this player's own color
-        own_color = 'b' if color_label == 'Black' else 'w'
+        # Pieces shown are those captured BY this player — they are the opponent's color
+        own_color = 'w' if color_label == 'Black' else 'b'
         usable_w = w - 2 * PANEL_PAD
         per_row = max(1, usable_w // (_CAP_ICON_SZ + 2))
         for i, ptype in enumerate(captured):

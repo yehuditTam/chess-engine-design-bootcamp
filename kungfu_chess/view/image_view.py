@@ -50,7 +50,7 @@ class ImageView(IRenderer):
         self._loader = sprite_loader or SpriteLoader()
         self._board_renderer = board_renderer or BoardRenderer(self._loader)
         self._panel_renderer = PanelRenderer(self._loader)
-        self._start_time = time.time()
+        self._start_time: float = None
         self._stop_time: float = None
 
     def _scale(self) -> float:
@@ -71,8 +71,12 @@ class ImageView(IRenderer):
     def _board_y(self):
         return TOP_BAR + LABEL_PAD
 
+    def start_timer(self):
+        if self._start_time is None:
+            self._start_time = time.time()
+
     def reset_timer(self):
-        self._start_time = time.time()
+        self._start_time = None
         self._stop_time = None
 
     def get_board_offset(self) -> tuple:
@@ -85,12 +89,14 @@ class ImageView(IRenderer):
                black_moves=None, white_moves=None,
                black_captured=None, white_captured=None,
                selected=None, feedback=None, legal_moves=None,
-               game_over=False, winner_name=None) -> None:
+               game_over=False, winner_name=None,
+               local_color: str = None) -> None:
 
         canvas = np.full((_WIN_H, _WIN_W, 3), _BG, dtype=np.uint8)
         self._draw_panels(
             canvas, black_name, black_score, black_moves or [], black_captured or [],
-            white_name, white_score, white_moves or [], white_captured or []
+            white_name, white_score, white_moves or [], white_captured or [],
+            local_color=local_color
         )
         self._board_renderer.draw(
             canvas, self._loader.load_board_img(_BOARD_PX),
@@ -104,8 +110,8 @@ class ImageView(IRenderer):
             self._draw_feedback(canvas, feedback)
         if game_over:
             if self._stop_time is None:
-                self._stop_time = time.time()
-            elapsed = int(self._stop_time - self._start_time)
+                self._stop_time = time.time() if self._start_time is not None else None
+            elapsed = int((self._stop_time or 0) - (self._start_time or 0))
             self._draw_game_over(
                 canvas, winner_name or "",
                 black_name, black_score, white_name, white_score, elapsed
@@ -123,7 +129,10 @@ class ImageView(IRenderer):
         cv2.imshow(_WINDOW_TITLE, display)
 
     def _draw_stopwatch(self, canvas):
-        elapsed = int((self._stop_time or time.time()) - self._start_time)
+        if self._start_time is None:
+            elapsed = 0
+        else:
+            elapsed = int((self._stop_time or time.time()) - self._start_time)
         txt = f"{elapsed // 60:02}:{elapsed % 60:02}"
         (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.4, 2)
         cv2.putText(canvas, txt,
@@ -144,17 +153,22 @@ class ImageView(IRenderer):
         return min(sw * margin / win_w, sh * margin / win_h, 1.0)
 
     def _draw_panels(self, canvas, black_name, black_score, black_moves, black_captured,
-                     white_name, white_score, white_moves, white_captured):
+                     white_name, white_score, white_moves, white_captured,
+                     local_color: str = None):
         panel_h = LABEL_PAD + _BOARD_PX + LABEL_PAD
-        # Each panel shows what was eaten FROM that player (opponent's captures = own losses)
+        black_is_local = (local_color is not None and local_color.lower() in ("black", "b"))
+        white_is_local = (local_color is not None and local_color.lower() in ("white", "w"))
+        # Each panel shows pieces captured BY that player (matches their score)
         self._panel_renderer.draw(
             canvas, PANEL_PAD, self._board_y - LABEL_PAD,
-            PANEL_W, panel_h, black_name, "Black", black_score, black_moves, white_captured
+            PANEL_W, panel_h, black_name, "Black", black_score, black_moves, black_captured,
+            is_local=black_is_local
         )
         self._panel_renderer.draw(
             canvas, self._board_x + _BOARD_PX + LABEL_PAD + PANEL_PAD,
             self._board_y - LABEL_PAD,
-            PANEL_W, panel_h, white_name, "White", white_score, white_moves, black_captured
+            PANEL_W, panel_h, white_name, "White", white_score, white_moves, white_captured,
+            is_local=white_is_local
         )
 
     def _draw_legal_moves(self, canvas, board, legal_moves):

@@ -99,13 +99,22 @@ class RealTimeArbiter:
         return colors
 
     def execute_pending_moves(self):
-        """Returns (completed_list, game_over_target, arrived_ends).
+        """Returns (completed_list, jump_captures, game_over_target, arrived_ends).
         completed_list items: (start, end, ptype, moving_color, captured_ptype)
+        jump_captures items:  (jumper_color, captured_ptype)
         """
         now = self._now()
-        completed, arrived_ends = [], []
+        completed, jump_captures, arrived_ends = [], [], []
         for move in sorted(self.pending_moves, key=lambda m: m.arrive_at):
             if now < move.arrive_at:
+                continue
+            if move not in self.pending_moves:
+                continue
+            jc = self._moving_piece_captured_by_airborne(move)
+            if jc is not None:
+                jump_captures.append((jc[1], jc[2]))
+                continue
+            if move not in self.pending_moves:
                 continue
             info, game_over_target, end = self._resolve_move_with_info(move)
             if info is not None:
@@ -114,10 +123,10 @@ class RealTimeArbiter:
                 arrived_ends.append(end)
             if game_over_target is not None:
                 self._expire_jumps(now)
-                return completed, game_over_target, arrived_ends
+                return completed, jump_captures, game_over_target, arrived_ends
         self._expire_jumps(now)
         self._expire_cooldowns(now)
-        return completed, None, arrived_ends
+        return completed, jump_captures, None, arrived_ends
 
     def _expire_jumps(self, now: float):
         self.pending_jumps = [j for j in self.pending_jumps if now < j.land_at]
@@ -136,7 +145,8 @@ class RealTimeArbiter:
         """
         moving_piece = self._board.get_piece(*move.start)
         if moving_piece is None:
-            self.pending_moves.remove(move)
+            if move in self.pending_moves:
+                self.pending_moves.remove(move)
             return None, None, None
 
         target = self._board.get_piece(*move.end)
@@ -145,19 +155,26 @@ class RealTimeArbiter:
             self.pending_moves.remove(move)
             return None, None, None
 
-        if self._moving_piece_captured_by_airborne(move, moving_piece, target):
-            return None, None, None
-
         return self._commit_move(move, moving_piece, target)
 
-    def _moving_piece_captured_by_airborne(self, move, moving_piece, target) -> bool:
+    def _moving_piece_captured_by_airborne(self, move) -> tuple | None:
+        """If the moving piece is captured by an airborne jumper, remove it and return capture info.
+        Returns (jumper_color, captured_ptype) as a 2-tuple to distinguish from normal move info.
+        Returns None if no jump capture occurred.
+        """
+        moving_piece = self._board.get_piece(*move.start)
+        if moving_piece is None:
+            if move in self.pending_moves:
+                self.pending_moves.remove(move)
+            return None
+        target = self._board.get_piece(*move.end)
         destination_is_airborne = any(j.cell == move.end for j in self.pending_jumps)
         if destination_is_airborne and target is not None and target.color != moving_piece.color:
             moving_piece.set_state(PieceState.CAPTURED)
             self._board.remove_piece(*move.start)
             self.pending_moves.remove(move)
-            return True
-        return False
+            return ("jump_capture", target.color, moving_piece.ptype)
+        return None
 
     def _commit_move(self, move, moving_piece, target):
         captured_ptype = target.ptype if target is not None else None

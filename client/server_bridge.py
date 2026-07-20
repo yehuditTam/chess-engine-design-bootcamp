@@ -56,11 +56,11 @@ class ServerBridge:
         self._outgoing.put({"type": "jump", "cell": list(cell)})
 
     def request_legal_moves(self, cell: Position):
-        """שלח בקשה לשרת לקבל את המהלכים החוקיים לכלי בתא נתון."""
+        """Send a legal_moves request to the server for the piece at the given cell."""
         self._outgoing.put({"type": "legal_moves", "cell": [cell.row, cell.col]})
 
     def poll_legal_moves(self):
-        """החזר את התשובה האחרונה לבקשת legal_moves, או None אם אין."""
+        """Return the latest legal_moves reply from the server, or None if none available."""
         try:
             return self._legal_moves.get_nowait()
         except queue.Empty:
@@ -127,8 +127,8 @@ class ServerBridge:
                 self._color = Color(d["color"])
                 self._assigned.set()    # unblock start()
             elif d["type"] == "state":
-                snap, game_over = dict_to_snapshot(d)
-                self._incoming.put((snap, game_over))
+                snap, game_over, game_start_time, winner_name = dict_to_snapshot(d)
+                self._incoming.put((snap, game_over, game_start_time, winner_name))
             elif d["type"] == "legal_moves":
                 moves = [Position(*m) for m in d["moves"]]
                 self._legal_moves.put(moves)

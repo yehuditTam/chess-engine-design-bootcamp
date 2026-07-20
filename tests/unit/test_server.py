@@ -251,8 +251,85 @@ class TestBroadcast:
 
 
 # ---------------------------------------------------------------------------
-# _game_loop
+# _game_loop — game_over detected inside the lock (line 140)
 # ---------------------------------------------------------------------------
+
+class TestGameLoopGameOverInsideLock:
+    def test_game_over_inside_lock_sends_final_state(self):
+        """Covers the `if self._game.is_game_over: break` inside the lock."""
+        server = GameServer()
+        board = [['wR', 'bK']]
+        with patch("server.game_server.load_board_csv", return_value=board), \
+             patch("server.game_server.asyncio.create_task"):
+            run(server._start_game())
+
+        ws = make_ws()
+        server._clients[Color.WHITE] = ws
+
+        # Make execute_pending_moves set game_over=True on first call
+        original = server._game.execute_pending_moves
+
+        def _set_over():
+            original()
+            server._game.is_game_over = True
+
+        server._game.execute_pending_moves = _set_over
+        run(server._game_loop())
+        assert any(m.get("game_over") is True for m in ws.sent)
+
+
+# ---------------------------------------------------------------------------
+# _on_connect — disconnect mid-game logs warning (line 77)
+# ---------------------------------------------------------------------------
+
+class TestOnConnectDisconnect:
+    def test_disconnect_during_game_logs_warning(self):
+        """Covers the except/finally in _on_connect (lines 77, 81-83)."""
+        server = GameServer()
+        ws = make_ws()
+        # Make async-for raise immediately to simulate disconnect
+        async def _anext(self):
+            raise Exception("dropped")
+        ws.__anext__ = _anext
+        ws.recv = AsyncMock(return_value=json.dumps({"type": "join", "username": "X"}))
+        server._start_game = AsyncMock()
+        run(server._on_connect(ws))
+        # Client must be cleaned up
+        assert Color.WHITE not in server._clients
+
+
+# ---------------------------------------------------------------------------
+# jump message starts the timer
+# ---------------------------------------------------------------------------
+
+class TestJumpStartsTimer:
+    def test_jump_sets_game_start_time(self):
+        server = GameServer()
+        board = [['wR', '.', 'bK']]
+        with patch("server.game_server.load_board_csv", return_value=board), \
+             patch("server.game_server.asyncio.create_task"):
+            run(server._start_game())
+        assert server._game_start_time == 0.0
+        msg = json.dumps({"type": "jump", "cell": [0, 0]})
+        run(server._handle_message(msg, Color.WHITE))
+        assert server._game_start_time > 0.0
+
+
+# ---------------------------------------------------------------------------
+# move message starts the timer
+# ---------------------------------------------------------------------------
+
+class TestMoveStartsTimer:
+    def test_move_sets_game_start_time(self):
+        server = GameServer()
+        board = [['wR', '.', 'bK']]
+        with patch("server.game_server.load_board_csv", return_value=board), \
+             patch("server.game_server.asyncio.create_task"):
+            run(server._start_game())
+        assert server._game_start_time == 0.0
+        msg = json.dumps({"type": "move", "from": [0, 0], "to": [0, 1]})
+        run(server._handle_message(msg, Color.WHITE))
+        assert server._game_start_time > 0.0
 
 class TestGameLoop:
     def test_game_loop_broadcasts_and_stops_on_game_over(self):

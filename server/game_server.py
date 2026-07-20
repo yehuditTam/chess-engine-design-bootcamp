@@ -14,6 +14,7 @@ Run with:
 import asyncio
 import json
 import logging
+import time as _time
 from kungfu_chess.realtime.game_engine import GameEngine
 from kungfu_chess.io.board_parser import load_board_csv
 from kungfu_chess.model.player import Player
@@ -105,11 +106,26 @@ class GameServer:
 
     async def _start_game(self):
         rows = load_board_csv(BOARD_CSV)
+        from kungfu_chess.shared.bus import EventBus, EventType
+        bus = EventBus()
+        bus.subscribe(
+            EventType.GAME_OVER,
+            lambda winner_color, **_: setattr(
+                self, '_winner_name',
+                self._usernames.get(
+                    Color.BLACK if winner_color == Color.BLACK else Color.WHITE,
+                    winner_color.name
+                )
+            )
+        )
         self._game = GameEngine(
             rows,
             black=Player(self._usernames.get(Color.BLACK, "Black"), Color.BLACK),
             white=Player(self._usernames.get(Color.WHITE, "White"), Color.WHITE),
+            bus=bus,
         )
+        self._game_start_time = 0.0
+        self._winner_name = ""
         log.info("Game started")
         asyncio.create_task(self._game_loop())
 
@@ -121,16 +137,25 @@ class GameServer:
         while self._game is not None and not self._game.is_game_over:
             async with self._lock:
                 self._game.execute_pending_moves()
+                if self._game.is_game_over:
+                    break
                 snap = self._game.get_game_snapshot()
-                msg = json.dumps(snapshot_to_dict(snap, self._game.is_game_over))
-
+                elapsed = (
+                    _time.time() - self._game_start_time
+                    if self._game_start_time > 0.0 else 0.0
+                )
+                msg = json.dumps(snapshot_to_dict(snap, False, elapsed, ""))
             await self._broadcast(msg)
             await asyncio.sleep(TICK_MS / 1000)
 
         # send final game-over state
         if self._game is not None:
             snap = self._game.get_game_snapshot()
-            msg = json.dumps(snapshot_to_dict(snap, True))
+            elapsed = (
+                _time.time() - self._game_start_time
+                if self._game_start_time > 0.0 else 0.0
+            )
+            msg = json.dumps(snapshot_to_dict(snap, True, elapsed, self._winner_name))
             await self._broadcast(msg)
         log.info("Game over — loop stopped")
 
@@ -151,9 +176,13 @@ class GameServer:
         async with self._lock:
             if msg["type"] == "move":
                 fr, to = msg["from"], msg["to"]
+                if self._game_start_time == 0.0:
+                    self._game_start_time = _time.time()
                 self._game.request_move(Position(*fr), Position(*to))
             elif msg["type"] == "jump":
                 cell = msg["cell"]
+                if self._game_start_time == 0.0:
+                    self._game_start_time = _time.time()
                 self._game.handle_jump(Position(*cell))
             elif msg["type"] == "legal_moves":
                 cell = msg["cell"]

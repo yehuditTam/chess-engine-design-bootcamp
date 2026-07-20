@@ -9,6 +9,7 @@ import cv2
 from client.server_bridge import ServerBridge
 from kungfu_chess.view.image_view import ImageView
 from kungfu_chess.view.view_controller import ViewController
+from kungfu_chess.view.sound_player import _play as _play_sound
 from kungfu_chess.shared.ui_constants import WINDOW_TITLE, KEY_ESC
 from kungfu_chess.model.position import Position
 
@@ -47,7 +48,7 @@ class _RemoteGame:
 
     def get_legal_moves(self, start: Position) -> list:
         self._bridge.request_legal_moves(start)
-        return []  # התשובה תגיע אסינכרונית — ראה לולאה ראשית
+        return []  # response arrives asynchronously via poll_legal_moves()
 
     def request_move(self, start: Position, end: Position):
         from kungfu_chess.shared.dto import MoveResult
@@ -68,8 +69,16 @@ def main():
     view = ImageView()
     remote_game = _RemoteGame(bridge, bridge.color())
     vc = ViewController(remote_game, view)
+    winner_name = ""
+    _prev_total_moves = 0
+    _prev_total_captured = 0
+    _prev_total_airborne = 0
+    _prev_game_over = False
 
-    cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_AUTOSIZE)
+    from kungfu_chess.view.image_view import _WIN_W, _WIN_H
+    cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
+    init_scale = ImageView._get_scale(_WIN_W, _WIN_H)
+    cv2.resizeWindow(WINDOW_TITLE, int(_WIN_W * init_scale), int(_WIN_H * init_scale))
 
     def on_click(event, mx, my, flags, param):
         vc.on_mouse(event, mx, my)
@@ -79,10 +88,37 @@ def main():
     while True:
         state = bridge.poll_state()
         if state is not None:
-            snap, game_over = state
+            snap, game_over, game_start_time, w_name = state
             remote_game.update(snap, game_over)
+            if game_start_time > 0 and view._start_time is None:
+                import time
+                view._start_time = time.time() - game_start_time
+            if w_name:
+                winner_name = w_name
 
-        # עדכן תוצאת legal_moves אם הגיעה תשובה מהשרת
+            total_moves = len(snap.black.moves) + len(snap.white.moves)
+            total_captured = len(snap.black.captured) + len(snap.white.captured)
+            total_airborne = sum(
+                1 for r in range(snap.board.rows) for c in range(snap.board.cols)
+                if (p := snap.board.get(r, c)) is not None and p.is_airborne
+            )
+            if total_captured > _prev_total_captured:
+                _play_sound("eat.mp3")
+            elif total_airborne > _prev_total_airborne:
+                _play_sound("jump.mp3")
+            elif total_moves > _prev_total_moves:
+                _play_sound("click.mp3")
+            if game_over and not _prev_game_over:
+                _play_sound("game_over.mp3")
+            _prev_total_moves = total_moves
+            _prev_total_captured = total_captured
+            _prev_total_airborne = total_airborne
+            _prev_game_over = game_over
+
+        for event in bridge.poll_events():
+            if event.get("type") == "sound":
+                _play_sound(event.get("name", "") + ".mp3")
+
         legal = bridge.poll_legal_moves()
         if legal is not None:
             vc.legal_moves = legal
@@ -99,6 +135,8 @@ def main():
                 legal_moves=vc.legal_moves,
                 feedback=vc.active_feedback(),
                 game_over=remote_game.is_game_over,
+                winner_name=winner_name,
+                local_color=bridge.color().value,
             )
 
         key = cv2.waitKey(30)

@@ -23,6 +23,7 @@ from kungfu_chess.realtime.motion import PendingMove
 from kungfu_chess.model.board import Board
 from kungfu_chess.model.position import Position
 from kungfu_chess.rules.piece_rules import MoveStrategy, RookStrategy
+from kungfu_chess.shared.constants import PieceState
 
 
 def p(r, c):
@@ -35,11 +36,9 @@ def p(r, c):
 
 class TestMoveStrategyBase:
     def test_base_requires_clear_path_returns_true(self):
-        """Directly exercise the base-class body of requires_clear_path."""
         class Minimal(MoveStrategy):
             def is_legal(self, start, end, target):
                 return True
-        # does NOT override requires_clear_path → hits line 12
         assert Minimal().requires_clear_path() is True
 
 
@@ -48,41 +47,59 @@ class TestMoveStrategyBase:
 # ---------------------------------------------------------------------------
 
 class TestOtherOccupiesAt:
-    """
-    _other_occupies_at returns False when the other piece's path ends before
-    reaching `cell`.  This exercises the `break` branch (line 65).
-
-    Setup:
-      - wR at (0,0) wants to move right to (0,2).
-      - wQ at (0,3) also moves left to (0,1).
-      - When computing wR's actual end, _compute_actual_end checks whether wQ
-        will occupy (0,1) before wR arrives there.
-      - wQ's path is (0,3)->(0,2)->(0,1); it reaches (0,1) in 2 steps.
-      - wR reaches (0,1) in 1 step — wQ arrives later, so no block at (0,1).
-      - wR then checks (0,2): wQ's path ends at (0,1), so the inner loop hits
-        `break` without returning True → _other_occupies_at returns False.
-    """
-
-    def _make_board(self, tokens):
-        """Build a 1-row Board from a list of token strings."""
-        return Board([tokens])
-
     def test_other_path_ends_before_cell_returns_false(self):
-        board = self._make_board(['wR', '.', '.', 'wQ'])
+        board = Board([['wR', '.', '.', 'wQ']])
         arbiter = RealTimeArbiter(board)
-        # Schedule wQ first so it is in pending_moves when wR is scheduled
-        arbiter.schedule_move(p(0, 3), p(0, 1))   # wQ: (0,3)->(0,1), 2 steps
+        arbiter.schedule_move(p(0, 3), p(0, 1))   # wQ: (0,3)->(0,1)
         arbiter.schedule_move(p(0, 0), p(0, 2))   # wR: (0,0)->(0,2)
-        # wR should reach (0,2) unobstructed because wQ stops at (0,1)
         rook_move = next(m for m in arbiter.pending_moves if m.start == p(0, 0))
         assert rook_move.end == p(0, 2)
 
     def test_other_occupies_at_returns_true_when_path_overlaps(self):
-        """Sanity: when the other piece DOES reach the cell first, it blocks."""
-        board = self._make_board(['wR', '.', 'wQ'])
+        board = Board([['wR', '.', 'wQ']])
         arbiter = RealTimeArbiter(board)
-        arbiter.schedule_move(p(0, 2), p(0, 1))   # wQ: (0,2)->(0,1), 1 step
-        arbiter.schedule_move(p(0, 0), p(0, 1))   # wR: (0,0)->(0,1), 1 step — same arrival
+        arbiter.schedule_move(p(0, 2), p(0, 1))   # wQ: 1 step
+        arbiter.schedule_move(p(0, 0), p(0, 1))   # wR: 1 step — blocked
         rook_move = next(m for m in arbiter.pending_moves if m.start == p(0, 0))
-        # wQ arrives at (0,1) at the same time — wR is blocked, stays at start
         assert rook_move.end == p(0, 0)
+
+
+# ---------------------------------------------------------------------------
+# _moving_piece_captured_by_airborne — moving piece is None (line 112)
+# ---------------------------------------------------------------------------
+
+class TestMovingPieceNone:
+    def test_moving_piece_already_gone_is_skipped(self):
+        """If the piece at move.start is None, the move is removed silently."""
+        board = Board([['wR', '.', 'bK']])
+        arbiter = RealTimeArbiter(board)
+        arbiter.schedule_move(p(0, 0), p(0, 2))
+        move = arbiter.pending_moves[0]
+        move.arrive_at = arbiter._now() - 1
+        # Remove the piece manually to simulate it already being gone
+        board.remove_piece(0, 0)
+        completed, jump_captures, target, _ = arbiter.execute_pending_moves()
+        assert completed == []
+        assert target is None
+        assert move not in arbiter.pending_moves
+
+
+# ---------------------------------------------------------------------------
+# _resolve_move_with_info — friendly piece at destination (lines 148-150)
+# ---------------------------------------------------------------------------
+
+class TestFriendlyAtDestination:
+    def test_friendly_at_dest_cancels_move(self):
+        """If a friendly piece is at the destination when the move resolves,
+        the moving piece returns to IDLE and the move is discarded."""
+        board = Board([['wR', 'wQ', '.']])
+        arbiter = RealTimeArbiter(board)
+        # Force a move from (0,0) to (0,1) where wQ already sits
+        move = PendingMove(p(0, 0), p(0, 1), arbiter._now() - 1)
+        arbiter.pending_moves.append(move)
+        completed, _, target, _ = arbiter.execute_pending_moves()
+        assert completed == []
+        assert target is None
+        rook = board.get_piece(0, 0)
+        assert rook is not None
+        assert rook.state == PieceState.IDLE

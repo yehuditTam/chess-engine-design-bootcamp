@@ -16,7 +16,9 @@ from kungfu_chess.shared.constants import Color, PieceType, PieceState
 # Snapshot → dict  (server side, before json.dumps)
 # ---------------------------------------------------------------------------
 
-def snapshot_to_dict(snap: GameSnapshot, game_over: bool) -> dict:
+def snapshot_to_dict(snap: GameSnapshot, game_over: bool,
+                     game_start_time: float = 0.0,
+                     winner_name: str = "") -> dict:
     """Convert a GameSnapshot to a JSON-serialisable dict."""
     return {
         "type": "state",
@@ -24,6 +26,8 @@ def snapshot_to_dict(snap: GameSnapshot, game_over: bool) -> dict:
         "black": _player_to_dict(snap.black),
         "white": _player_to_dict(snap.white),
         "game_over": game_over,
+        "game_start_time": game_start_time,
+        "winner_name": winner_name,
     }
 
 
@@ -63,16 +67,20 @@ def _player_to_dict(player: PlayerSnapshot) -> dict:
 # dict → Snapshot  (client side, after json.loads)
 # ---------------------------------------------------------------------------
 
-def dict_to_snapshot(d: dict) -> tuple[GameSnapshot, bool]:
+def dict_to_snapshot(d: dict) -> tuple:
     """
-    Convert a received dict back to (GameSnapshot, game_over).
-    Mirrors snapshot_to_dict exactly.
+    Convert a received dict back to (GameSnapshot, game_over, game_start_time, winner_name).
     """
     board = _list_to_board(d["board"])
     black = _dict_to_player(d["black"])
     white = _dict_to_player(d["white"])
     game_over = d["game_over"]
-    return GameSnapshot(board=board, black=black, white=white), game_over
+    game_start_time = d.get("game_start_time", 0.0)
+    winner_name = d.get("winner_name", "")
+    return (
+        GameSnapshot(board=board, black=black, white=white),
+        game_over, game_start_time, winner_name
+    )
 
 
 def _list_to_board(rows: list) -> BoardSnapshot:
