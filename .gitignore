@@ -8,3 +8,5 @@ dist/
 build/
 board.png
 debug_capture.py
+*.mp3
+!assets/sounds/*.mp3
