@@ -69,6 +69,7 @@ class PanelRenderer:
     def _draw_captured_icons(self, panel, captured, w, top_y, color_label):
         if not captured or self._loader is None:
             return
+        # Pieces shown are those lost by this player — they are this player's own color
         own_color = 'b' if color_label == 'Black' else 'w'
         usable_w = w - 2 * PANEL_PAD
         per_row = max(1, usable_w // (_CAP_ICON_SZ + 2))

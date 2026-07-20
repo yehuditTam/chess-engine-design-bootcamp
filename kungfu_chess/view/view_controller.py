@@ -2,6 +2,7 @@ import time
 from kungfu_chess.model.position import Position
 from kungfu_chess.shared.dto import MoveResult
 from kungfu_chess.shared.ui_constants import FEEDBACK_TTL
+from kungfu_chess.view.sound_player import play_error
 
 # --- colors ---
 _COLOR_FEEDBACK_OK = (0, 220, 255)
@@ -63,6 +64,7 @@ class ViewController:
                     self.feedback = (pos, err_color, time.time() + FEEDBACK_TTL)
                     self.selected = None
                     self.legal_moves = []
+                    play_error()
 
     def active_feedback(self):
         if self.feedback and time.time() < self.feedback[2]:

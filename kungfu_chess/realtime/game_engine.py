@@ -74,15 +74,18 @@ class GameEngine(IGame):
 
     def execute_pending_moves(self):
         completed, target, ends = self._arbiter.execute_pending_moves()
+        game_over_pending = target is not None
         for (start, end, ptype, moving_color, captured_ptype) in completed:
             self._trackers[moving_color].record_move(ptype, start, end)
-            if captured_ptype is not None:
+            if captured_ptype is not None and not game_over_pending:
                 self._trackers[moving_color].record_capture(captured_ptype)
                 self._bus.publish(
                     EventType.PIECE_CAPTURED,
                     by_color=moving_color,
                     captured_ptype=captured_ptype,
                 )
+            elif captured_ptype is not None:
+                self._trackers[moving_color].record_capture(captured_ptype)
             self._bus.publish(
                 EventType.PIECE_MOVED,
                 color=moving_color,
@@ -90,7 +93,8 @@ class GameEngine(IGame):
                 start=start,
                 end=end,
             )
-            self._check_promotion(end)
+            if not game_over_pending:
+                self._check_promotion(end)
         if target is not None:
             self.is_game_over = True
             winner = Color.WHITE if target.color == Color.BLACK else Color.BLACK

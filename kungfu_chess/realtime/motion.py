@@ -16,6 +16,7 @@ class PendingMove:
 class PendingJump:
     cell: Position
     land_at: float
+    started_at: float = 0.0
 
 
 @dataclass

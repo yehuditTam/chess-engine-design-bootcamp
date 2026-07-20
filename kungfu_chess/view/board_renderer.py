@@ -6,6 +6,11 @@ from kungfu_chess.view.sprite_loader import SpriteLoader
 
 # --- colors ---
 _TEXT_LIGHT = (230, 230, 230)
+_ARC_COOLDOWN = (50, 220, 80)    # green arc for cooldown countdown
+_ARC_JUMP = (0, 220, 255)        # cyan arc for jump countdown
+_ARC_BG = (60, 60, 60)           # dark background arc
+_ARC_THICKNESS = 5
+_ARC_RADIUS_RATIO = 0.46         # fraction of tile size
 
 # --- drawing ---
 _SPRITE_SCALE = 0.92
@@ -19,7 +24,7 @@ class BoardRenderer:
         self._jump_start: dict[tuple, float] = {}
 
     def draw(self, canvas: np.ndarray, board_img: np.ndarray,
-             board_x: int, board_y: int, board, tile: int):
+             board_x: int, board_y: int, board, tile: int, game_over: bool = False):
         bh, bw = board_img.shape[:2]
         canvas[board_y:board_y+bh, board_x:board_x+bw] = board_img
 
@@ -35,8 +40,6 @@ class BoardRenderer:
                     anim_offset = -self._jump_start[key]
                 else:
                     self._jump_start.pop(key, None)
-                    # anim_offset staggers idle animations per cell
-                    # so all pieces don't pulse in sync.
                     anim_offset = (row * 8 + col) * _ANIM_STAGGER
                 state = 'jumping' if piece.is_airborne else piece.state.value
                 sprite = self._loader.load_piece_sprite(
@@ -48,6 +51,28 @@ class BoardRenderer:
                 py = board_y + row * tile + (tile - sh) // 2
                 self._blend(canvas, sprite, px, py)
 
+                if game_over:
+                    continue
+
+                cx = board_x + col * tile + tile // 2
+                cy = board_y + row * tile + tile // 2
+                r = int(tile * _ARC_RADIUS_RATIO)
+
+                # --- cooldown: circular countdown arc ---
+                if piece.is_cooling and piece.cooldown_ends_at > 0:
+                    total = piece.cooldown_ends_at - piece.cooldown_started_at
+                    remaining = piece.cooldown_ends_at - time.time()
+                    frac = max(0.0, min(1.0, remaining / total)) if total > 0 else 0.0
+                    self._draw_arc(canvas, cx, cy, r, frac, _ARC_BG, _ARC_COOLDOWN)
+
+                # --- jump: circular countdown arc ---
+                elif piece.is_airborne and piece.jump_started_at > 0:
+                    from kungfu_chess.shared.constants import JUMP_DURATION_SECONDS
+                    total = JUMP_DURATION_SECONDS
+                    elapsed = time.time() - piece.jump_started_at
+                    frac = max(0.0, min(1.0, 1.0 - elapsed / total))
+                    self._draw_arc(canvas, cx, cy, r, frac, _ARC_BG, _ARC_JUMP)
+
         board_px = tile * 8
         for c, lbl in enumerate(_COL_LABELS):
             cx = board_x + c * tile + tile // 2
@@ -58,6 +83,16 @@ class BoardRenderer:
             cy = board_y + r * tile + tile // 2
             self._text(canvas, lbl, board_x - LABEL_PAD // 2, cy)
             self._text(canvas, lbl, board_x + board_px + LABEL_PAD // 2, cy)
+
+    @staticmethod
+    def _draw_arc(canvas, cx, cy, r, frac, bg_color, fg_color):
+        """Draw a full background circle then a shrinking foreground arc (clockwise from top)."""
+        cv2.circle(canvas, (cx, cy), r, bg_color, _ARC_THICKNESS, cv2.LINE_AA)
+        if frac <= 0:
+            return
+        sweep = int(360 * frac)
+        # cv2.ellipse angles: 0=right, goes clockwise. Start from top = -90.
+        cv2.ellipse(canvas, (cx, cy), (r, r), -90, 0, sweep, fg_color, _ARC_THICKNESS, cv2.LINE_AA)
 
     @staticmethod
     def _blend(canvas: np.ndarray, sprite: np.ndarray, x: int, y: int):

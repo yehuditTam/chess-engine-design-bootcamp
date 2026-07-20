@@ -24,9 +24,10 @@ SERVER_URL = "ws://localhost:8765"
 
 class ServerBridge:
     def __init__(self):
-        self._outgoing: queue.Queue = queue.Queue()   # commands main→ws
-        self._incoming: queue.Queue = queue.Queue()   # state    ws→main
-        self._legal_moves: queue.Queue = queue.Queue() # legal_moves תשובות
+        self._outgoing: queue.Queue = queue.Queue()  # commands main→ws
+        self._incoming: queue.Queue = queue.Queue()  # state    ws→main
+        self._legal_moves: queue.Queue = queue.Queue()  # legal_moves replies
+        self._events: queue.Queue = queue.Queue()  # pub/sub events
         self._color: Color | None = None
         self._connected = threading.Event()           # set when WS is open
         self._assigned = threading.Event()            # set when color is received
@@ -64,6 +65,16 @@ class ServerBridge:
             return self._legal_moves.get_nowait()
         except queue.Empty:
             return None
+
+    def poll_events(self) -> list[dict]:
+        """Return all queued pub/sub event dicts and clear the queue."""
+        events = []
+        while not self._events.empty():
+            try:
+                events.append(self._events.get_nowait())
+            except queue.Empty:
+                break
+        return events
 
     def poll_state(self):
         """
@@ -121,13 +132,14 @@ class ServerBridge:
             elif d["type"] == "legal_moves":
                 moves = [Position(*m) for m in d["moves"]]
                 self._legal_moves.put(moves)
+            elif d["type"] in ("scores_updated", "move_logged", "sound", "animation"):
+                self._events.put(d)
 
     # ------------------------------------------------------------------
     # Send queued commands to the server
     # ------------------------------------------------------------------
 
     async def _sender(self, ws):
-        loop = asyncio.get_event_loop()
         while True:
             # check outgoing queue without blocking the event loop
             try:

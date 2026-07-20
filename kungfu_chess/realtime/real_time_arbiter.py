@@ -70,7 +70,7 @@ class RealTimeArbiter:
     def _other_occupies_at(
             self, other: PendingMove, cell: Position, arrive_here: float, now: float
     ) -> bool:
-        """Returns True if `other` will permanently occupy `cell` (i.e. end there) by the time `arrive_here`."""
+        """True if `other` will permanently occupy `cell` by the time `arrive_here`."""
         if other.end != cell:
             return False
         odr, odc = other.start.direction_to(other.end)
@@ -87,7 +87,8 @@ class RealTimeArbiter:
         return False
 
     def schedule_jump(self, cell):
-        self.pending_jumps.append(PendingJump(cell, self._now() + JUMP_DURATION_SECONDS))
+        now = self._now()
+        self.pending_jumps.append(PendingJump(cell, now + JUMP_DURATION_SECONDS, started_at=now))
 
     def moving_colors(self):
         colors = set()
@@ -162,7 +163,10 @@ class RealTimeArbiter:
         captured_ptype = target.ptype if target is not None else None
         self._board.move_piece(move.start, move.end)
         moving_piece.set_state(PieceState.COOLING)
-        self.pending_cooldowns.append(PendingCooldown(move.end, move.arrive_at + COOLDOWN_SECONDS))
+        now = self._now()
+        self.pending_cooldowns.append(
+            PendingCooldown(move.end, move.arrive_at + COOLDOWN_SECONDS, started_at=now)
+        )
         self.pending_moves.remove(move)
         info = (move.start, move.end, moving_piece.ptype, moving_piece.color, captured_ptype)
         if target is not None:

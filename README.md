@@ -136,15 +136,41 @@ python -m pytest tests/ --cov=kungfu_chess --cov=server --cov=client --cov-repor
 | Event | Duration |
 |---|---|
 | Move (per square) | 1.0 second |
-| Jump (airborne) | 1.0 second |
-| Cooldown after arrival | 2.0 seconds |
+| Jump (airborne) | 2.0 seconds |
+| Cooldown after arrival | 5.0 seconds |
 
 Only one color can have pieces in motion at a time.  
 A piece that is pending, airborne, or cooling cannot be selected or moved.
 
+While cooling or airborne, a **circular countdown arc** is drawn around the piece:
+- 🟢 Green arc — cooling down after a move (5 s)
+- 🔵 Cyan arc — airborne after a jump (2 s)
+
+## Sounds
+
+| File | Event |
+|---|---|
+| `click.mp3` | Piece moves |
+| `eat.mp3` | Piece captured |
+| `jump.mp3` | Piece jumps |
+| `error.mp3` | Invalid move attempt |
+| `game_over.mp3` | Game ends |
+
+All sound files live in `assets/sounds/`.
+
 ---
 
-## WebSocket Protocol
+## Game Over Screen
+
+When the game ends an overlay displays:
+- Winner name
+- Game duration (MM:SS)
+- Both players' names and scores
+- `R` to restart, `ESC` to exit
+
+---
+
+
 
 All messages are JSON. Server → client:
 

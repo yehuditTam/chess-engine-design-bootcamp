@@ -33,11 +33,13 @@ _OVERLAY_ALPHA = 0.6
 
 # --- typography ---
 _FONT_LARGE = 2.0
-_FONT_SMALL = 0.7
+_FONT_MED = 0.9
+_FONT_SMALL = 0.65
 _FONT_THICK_LARGE = 3
+_FONT_THICK_MED = 2
 _FONT_THICK_SMALL = 1
-_GAMEOVER_TEXT_Y_OFF = 20
-_SUBTITLE_Y_OFF = 30
+_COLOR_WINNER = (0, 255, 160)    # bright green for winner name
+_COLOR_SUMMARY = (220, 220, 220)
 
 # --- misc ---
 _WINDOW_TITLE = WINDOW_TITLE
@@ -52,9 +54,11 @@ class ImageView(IRenderer):
         self._board_y = TOP_BAR + LABEL_PAD
         self._scale = 1.0
         self._start_time = time.time()
+        self._stop_time: float = None
 
     def reset_timer(self):
         self._start_time = time.time()
+        self._stop_time = None
 
     def get_board_offset(self) -> tuple:
         s = self._scale
@@ -65,7 +69,8 @@ class ImageView(IRenderer):
                black_score=0, white_score=0,
                black_moves=None, white_moves=None,
                black_captured=None, white_captured=None,
-               selected=None, feedback=None, legal_moves=None, game_over=False) -> None:
+               selected=None, feedback=None, legal_moves=None,
+               game_over=False, winner_name=None) -> None:
 
         canvas = np.full((_WIN_H, _WIN_W, 3), _BG, dtype=np.uint8)
         self._draw_panels(
@@ -74,7 +79,7 @@ class ImageView(IRenderer):
         )
         self._board_renderer.draw(
             canvas, self._loader.load_board_img(_BOARD_PX),
-            self._board_x, self._board_y, board, TILE_SIZE
+            self._board_x, self._board_y, board, TILE_SIZE, game_over
         )
         if legal_moves:
             self._draw_legal_moves(canvas, board, legal_moves)
@@ -83,7 +88,13 @@ class ImageView(IRenderer):
         if feedback is not None:
             self._draw_feedback(canvas, feedback)
         if game_over:
-            self._draw_game_over(canvas)
+            if self._stop_time is None:
+                self._stop_time = time.time()
+            elapsed = int(self._stop_time - self._start_time)
+            self._draw_game_over(
+                canvas, winner_name or "",
+                black_name, black_score, white_name, white_score, elapsed
+            )
         self._draw_stopwatch(canvas)
         self._scale = self._get_scale(canvas.shape[1], canvas.shape[0])
         if self._scale != 1.0:
@@ -95,7 +106,7 @@ class ImageView(IRenderer):
         cv2.imshow(_WINDOW_TITLE, display)
 
     def _draw_stopwatch(self, canvas):
-        elapsed = int(time.time() - self._start_time)
+        elapsed = int((self._stop_time or time.time()) - self._start_time)
         txt = f"{elapsed // 60:02}:{elapsed % 60:02}"
         (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.4, 2)
         cv2.putText(canvas, txt,
@@ -118,14 +129,15 @@ class ImageView(IRenderer):
     def _draw_panels(self, canvas, black_name, black_score, black_moves, black_captured,
                      white_name, white_score, white_moves, white_captured):
         panel_h = LABEL_PAD + _BOARD_PX + LABEL_PAD
+        # Each panel shows what was eaten FROM that player (opponent's captures = own losses)
         self._panel_renderer.draw(
             canvas, PANEL_PAD, self._board_y - LABEL_PAD,
-            PANEL_W, panel_h, black_name, "Black", black_score, black_moves, black_captured
+            PANEL_W, panel_h, black_name, "Black", black_score, black_moves, white_captured
         )
         self._panel_renderer.draw(
             canvas, self._board_x + _BOARD_PX + LABEL_PAD + PANEL_PAD,
             self._board_y - LABEL_PAD,
-            PANEL_W, panel_h, white_name, "White", white_score, white_moves, white_captured
+            PANEL_W, panel_h, white_name, "White", white_score, white_moves, black_captured
         )
 
     def _draw_legal_moves(self, canvas, board, legal_moves):
@@ -158,24 +170,39 @@ class ImageView(IRenderer):
             color, _BORDER_THICK
         )
 
-    def _draw_game_over(self, canvas):
+    def _draw_game_over(self, canvas, winner_name,
+                        black_name, black_score, white_name, white_score, elapsed_secs):
         overlay = canvas.copy()
         cv2.rectangle(overlay, (0, 0), (_WIN_W, _WIN_H), _COLOR_OVERLAY, -1)
         cv2.addWeighted(overlay, _OVERLAY_ALPHA, canvas, 1 - _OVERLAY_ALPHA, 0, canvas)
-        (tw, _), _ = cv2.getTextSize(
-            "GAME OVER", cv2.FONT_HERSHEY_SIMPLEX, _FONT_LARGE, _FONT_THICK_LARGE
+
+        cy = _WIN_H // 2 - 90
+        self._put_centered(
+            canvas, "GAME OVER", cy, _FONT_LARGE, _FONT_THICK_LARGE, _COLOR_GAME_OVER
         )
-        cv2.putText(
-            canvas, "GAME OVER",
-            (_WIN_W // 2 - tw // 2, _WIN_H // 2 - _GAMEOVER_TEXT_Y_OFF),
-            cv2.FONT_HERSHEY_SIMPLEX, _FONT_LARGE, _COLOR_GAME_OVER, _FONT_THICK_LARGE, cv2.LINE_AA
+        cy += 70
+        self._put_centered(
+            canvas, f"{winner_name} wins!", cy, _FONT_MED, _FONT_THICK_MED, _COLOR_WINNER
         )
-        subtitle = "Press R to restart  |  ESC to exit"
-        (tw, _), _ = cv2.getTextSize(
-            subtitle, cv2.FONT_HERSHEY_SIMPLEX, _FONT_SMALL, _FONT_THICK_SMALL
+        cy += 44
+        mins, secs = elapsed_secs // 60, elapsed_secs % 60
+        self._put_centered(
+            canvas, f"Game duration:  {mins:02}:{secs:02}",
+            cy, _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY
         )
-        cv2.putText(
-            canvas, subtitle,
-            (_WIN_W // 2 - tw // 2, _WIN_H // 2 + _SUBTITLE_Y_OFF),
-            cv2.FONT_HERSHEY_SIMPLEX, _FONT_SMALL, _TEXT_LIGHT, _FONT_THICK_SMALL, cv2.LINE_AA
+        cy += 30
+        summary = f"{black_name}  {black_score} pts      {white_name}  {white_score} pts"
+        self._put_centered(
+            canvas, summary, cy, _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY
         )
+        cy += 44
+        self._put_centered(
+            canvas, "Press R to restart  |  ESC to exit",
+            cy, _FONT_SMALL, _FONT_THICK_SMALL, _TEXT_LIGHT
+        )
+
+    @staticmethod
+    def _put_centered(canvas, txt, cy, scale, thick, color):
+        (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+        cv2.putText(canvas, txt, (_WIN_W // 2 - tw // 2, cy + th // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
