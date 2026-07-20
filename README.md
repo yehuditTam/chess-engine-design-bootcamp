@@ -1,7 +1,8 @@
 # Kungfu Chess Engine
 
 A real-time chess engine where both players move simultaneously — no turns, no waiting.  
-Pieces take time to travel, can jump over enemies, and need to cool down after arriving.
+Pieces take time to travel, can jump over enemies, and need to cool down after arriving.  
+Supports both local single-machine play and networked two-player mode over WebSockets.
 
 ---
 
@@ -10,6 +11,7 @@ Pieces take time to travel, can jump over enemies, and need to cool down after a
 - **Both players move at the same time** — there are no turns.
 - **Every move takes time** — a piece travels at 1 second per square.
 - **Cooldown** — after arriving, a piece rests for 2 seconds before it can move again.
+- **Friendly blocking** — a piece stops one square before a cell that a friendly piece will occupy.
 - **Jump** — a piece can leap into the air for 1 second. Any enemy that arrives at its cell during the jump is captured instead. The airborne piece stays put.
 - **Game over** — the first player to capture the opponent's King wins.
 - **Promotion** — a Pawn that reaches the last row is immediately promoted to Queen.
@@ -22,11 +24,19 @@ Pieces take time to travel, can jump over enemies, and need to cool down after a
 kungfu_chess/
 ├── model/        — Board, Piece, Position (pure data, no logic)
 ├── rules/        — Move validation per piece type (Strategy pattern)
-├── realtime/     — Timing, motion scheduling, arrival resolution
+├── realtime/     — Timing, motion scheduling, arrival resolution, score tracking
 ├── input/        — Command parsing, click handling, stdin controller
 ├── io/           — Text board parsing and printing
 ├── view/         — OpenCV rendering, sprite animation, mouse input
-└── shared/       — Constants, DTOs, interfaces, exceptions, validators
+└── shared/       — Constants, DTOs, interfaces, exceptions, validators, EventBus
+
+server/
+├── game_server.py  — Async WebSocket server (2-player slot management, 30 ms game loop)
+└── serializer.py   — GameSnapshot ↔ JSON conversion
+
+client/
+├── server_bridge.py  — Thread-safe bridge between asyncio WebSocket and OpenCV loop
+└── run_client.py     — OpenCV client that connects to the server
 
 tests/
 ├── unit/         — One file per layer
@@ -45,17 +55,33 @@ pip install -r requirements.txt
 
 ## Running
 
-### Visual mode (OpenCV window)
+### Networked mode (two players over WebSocket)
+
+Start the server first:
+
+```bash
+python -m server.game_server
+```
+
+Then each player connects with the client:
+
+```bash
+python -m client.run_client
+```
+
+You will be prompted for a username. The first connection is assigned White, the second Black.
+
+**Mouse controls:**
+- Left click — select a piece, then click destination to move
+- Right click — make the selected piece jump
+
+### Local visual mode (single machine, OpenCV window)
 
 ```bash
 python run_view.py
 ```
 
 A dialog will appear to enter player names before the game starts. Leave blank to use the defaults ("Black" / "White").
-
-**Mouse controls:**
-- Left click — select a piece, then click destination to move
-- Right click — make the selected piece jump
 
 ### Text mode (stdin)
 
@@ -97,6 +123,12 @@ Pixel coordinates are converted to board cells using tile size (100px per cell).
 python -m pytest tests/
 ```
 
+With coverage:
+
+```bash
+python -m pytest tests/ --cov=kungfu_chess --cov=server --cov=client --cov-report=term-missing
+```
+
 ---
 
 ## Timing Model
@@ -109,3 +141,25 @@ python -m pytest tests/
 
 Only one color can have pieces in motion at a time.  
 A piece that is pending, airborne, or cooling cannot be selected or moved.
+
+---
+
+## WebSocket Protocol
+
+All messages are JSON. Server → client:
+
+| Message type | Fields | Description |
+|---|---|---|
+| `assigned` | `color` (`"w"` / `"b"`) | Sent immediately on connect |
+| `state` | `board`, `black`, `white`, `game_over` | Broadcast every 30 ms |
+| `legal_moves` | `cell`, `moves` | Reply to a `legal_moves` request |
+| `error` | `reason` | Sent when server is full |
+
+Client → server:
+
+| Message type | Fields | Description |
+|---|---|---|
+| `join` | `username` | First message after connect |
+| `move` | `from`, `to` | Request a piece move |
+| `jump` | `cell` | Request a piece jump |
+| `legal_moves` | `cell` | Request legal moves for a cell |

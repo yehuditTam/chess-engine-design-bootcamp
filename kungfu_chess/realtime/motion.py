@@ -22,3 +22,4 @@ class PendingJump:
 class PendingCooldown:
     cell: Position
     ready_at: float
+    started_at: float = 0.0

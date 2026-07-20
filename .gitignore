@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.coverage
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+board.png
+debug_capture.py

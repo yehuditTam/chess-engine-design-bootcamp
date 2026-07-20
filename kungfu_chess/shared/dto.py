@@ -12,6 +12,9 @@ class PieceSnapshot:
     is_cooling: bool = False
     state: PieceState = PieceState.IDLE
     is_airborne: bool = False
+    cooldown_ends_at: float = 0.0
+    cooldown_started_at: float = 0.0
+    jump_started_at: float = 0.0
 
 
 @dataclass(frozen=True)

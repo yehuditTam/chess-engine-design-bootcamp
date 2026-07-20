@@ -442,8 +442,8 @@ class TestFriendlyBlockingPath:
             ['.', '.', '.', '.', 'wR', '.', '.', '.'],
         ]
         game = Game(board)
-        # Queen: (4,3)->(4,5), passes (4,4) after 1 step
-        game.request_move(p(4, 3), p(4, 5))
+        # Queen: (4,3)->(4,4), ends at (4,4) after 1 step
+        game.request_move(p(4, 3), p(4, 4))
         # Rook: (7,4)->(0,4), reaches (4,4) after 3 steps
         game.request_move(p(7, 4), p(0, 4))
         rook_move = next(m for m in game.pending_moves if m.start == p(7, 4))

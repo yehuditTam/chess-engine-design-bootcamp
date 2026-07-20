@@ -70,7 +70,9 @@ class RealTimeArbiter:
     def _other_occupies_at(
             self, other: PendingMove, cell: Position, arrive_here: float, now: float
     ) -> bool:
-        """Returns True if `other` will occupy `cell` by the time `arrive_here`."""
+        """Returns True if `other` will permanently occupy `cell` (i.e. end there) by the time `arrive_here`."""
+        if other.end != cell:
+            return False
         odr, odc = other.start.direction_to(other.end)
         ocurr = Position(other.start.row + odr, other.start.col + odc)
         ostep = 1

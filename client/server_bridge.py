@@ -14,6 +14,7 @@ import asyncio
 import json
 import queue
 import threading
+import websockets
 from kungfu_chess.model.position import Position
 from kungfu_chess.shared.constants import Color
 from server.serializer import dict_to_snapshot
@@ -86,15 +87,19 @@ class ServerBridge:
         asyncio.run(self._ws_loop())
 
     async def _ws_loop(self):
-        import websockets
         async with websockets.connect(SERVER_URL) as ws:
             self._connected.set()           # unblock start()
             await ws.send(json.dumps({"type": "join", "username": self._username}))
-            # run sender and receiver concurrently
-            await asyncio.gather(
-                self._receiver(ws),
-                self._sender(ws),
-            )
+            sender_task = asyncio.create_task(self._sender(ws))
+            await asyncio.sleep(0)          # let sender drain outgoing queue first
+            try:
+                await self._receiver(ws)
+            finally:
+                sender_task.cancel()
+                try:
+                    await sender_task
+                except asyncio.CancelledError:
+                    pass
 
     # ------------------------------------------------------------------
     # Receive state messages from the server
