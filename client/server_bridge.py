@@ -28,6 +28,8 @@ class ServerBridge:
         self._incoming: queue.Queue = queue.Queue()  # state    ws→main
         self._legal_moves: queue.Queue = queue.Queue()  # legal_moves replies
         self._events: queue.Queue = queue.Queue()  # pub/sub events
+        self._auth_result: queue.Queue = queue.Queue()  # auth_ok / auth_fail
+        self._rating_updates: queue.Queue = queue.Queue()  # rating_update messages
         self._color: Color | None = None
         self._connected = threading.Event()           # set when WS is open
         self._assigned = threading.Event()            # set when color is received
@@ -37,11 +39,26 @@ class ServerBridge:
     # Public API — called from the main (OpenCV) thread
     # ------------------------------------------------------------------
 
-    def start(self, username: str = "Player"):
+    def start(self):
         """Start the background WebSocket thread. Blocks until color is assigned."""
-        self._username = username
         self._thread.start()
-        self._assigned.wait()         # wait until server sends "assigned"
+        self._assigned.wait()
+
+    def authenticate(self, username: str, password: str, action: str = "login") -> dict:
+        """
+        Send auth message and block until auth_ok or auth_fail is received.
+        Returns the response dict (type, username/reason, rating).
+        """
+        self._outgoing.put({"type": "auth", "action": action,
+                            "username": username, "password": password})
+        return self._auth_result.get()  # blocks until server replies
+
+    def poll_rating_update(self) -> dict | None:
+        """Return a rating_update dict if one has arrived, else None."""
+        try:
+            return self._rating_updates.get_nowait()
+        except queue.Empty:
+            return None
 
     def color(self) -> Color | None:
         """Return the color assigned by the server (WHITE or BLACK)."""
@@ -100,7 +117,6 @@ class ServerBridge:
     async def _ws_loop(self):
         async with websockets.connect(SERVER_URL) as ws:
             self._connected.set()           # unblock start()
-            await ws.send(json.dumps({"type": "join", "username": self._username}))
             sender_task = asyncio.create_task(self._sender(ws))
             await asyncio.sleep(0)          # let sender drain outgoing queue first
             try:
@@ -126,12 +142,16 @@ class ServerBridge:
             if d["type"] == "assigned":
                 self._color = Color(d["color"])
                 self._assigned.set()    # unblock start()
+            elif d["type"] in ("auth_ok", "auth_fail"):
+                self._auth_result.put(d)
             elif d["type"] == "state":
                 snap, game_over, game_start_time, winner_name = dict_to_snapshot(d)
                 self._incoming.put((snap, game_over, game_start_time, winner_name))
             elif d["type"] == "legal_moves":
                 moves = [Position(*m) for m in d["moves"]]
                 self._legal_moves.put(moves)
+            elif d["type"] == "rating_update":
+                self._rating_updates.put(d)
             elif d["type"] == "event":
                 self._events.put(d)
             elif d["type"] in ("scores_updated", "move_logged", "sound", "animation"):

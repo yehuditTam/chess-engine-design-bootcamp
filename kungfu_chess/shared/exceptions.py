@@ -19,12 +19,10 @@ class CoolingError(InvalidMoveError):
 
 
 class MotionInProgressError(InvalidMoveError):
-    """Raised when a move is requested but another move is already active."""
-    reason = "motion_in_progress"
+    pass
 
 
 class InvalidBoardError(Exception):
-    """Raised when board validation fails."""
     def __init__(self, errors):
         self.errors = errors
         super().__init__("Invalid board: " + ", ".join(str(e) for e in errors))

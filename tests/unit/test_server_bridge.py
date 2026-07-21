@@ -67,22 +67,16 @@ def bridge_with_messages(server_messages):
 
 
 # ---------------------------------------------------------------------------
-# _ws_loop — sends join as first message
+# _ws_loop — no automatic join (join is sent after auth via outgoing queue)
 # ---------------------------------------------------------------------------
 
-class TestWsLoopJoin:
-    def test_join_message_sent_first(self):
+class TestWsLoopNoAutoJoin:
+    def test_no_automatic_join_sent(self):
         _, ws = bridge_with_messages([
             {"type": "assigned", "color": "w"},
         ])
-        assert ws.sent[0] == {"type": "join", "username": "TestUser"}
-
-    def test_join_sent_before_any_other_message(self):
-        _, ws = bridge_with_messages([
-            {"type": "assigned", "color": "b"},
-        ])
-        # first outgoing message must be join
-        assert ws.sent[0]["type"] == "join"
+        join_msgs = [m for m in ws.sent if m.get("type") == "join"]
+        assert len(join_msgs) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -266,3 +260,94 @@ class TestStart:
         with patch("client.server_bridge.websockets.connect", return_value=cm):
             run(bridge._ws_loop())
         assert bridge.color() == Color.BLACK
+
+
+# ---------------------------------------------------------------------------
+# authenticate() — sends auth message, blocks on auth_result queue
+# ---------------------------------------------------------------------------
+
+class TestAuthenticate:
+    def test_authenticate_login_returns_auth_ok(self):
+        bridge, _ = bridge_with_messages([
+            {"type": "assigned", "color": "w"},
+            {"type": "auth_ok", "username": "alice", "rating": 1200},
+        ])
+        bridge._outgoing.put(
+            {"type": "auth", "action": "login", "username": "alice", "password": "x"}
+        )
+        # Simulate what authenticate() does: put on outgoing, get from auth_result
+        bridge._auth_result.put({"type": "auth_ok", "username": "alice", "rating": 1200})
+        result = bridge._auth_result.get()
+        assert result["type"] == "auth_ok"
+        assert result["username"] == "alice"
+        assert result["rating"] == 1200
+
+    def test_authenticate_routes_auth_ok_to_queue(self):
+        bridge, _ = bridge_with_messages([
+            {"type": "assigned", "color": "w"},
+            {"type": "auth_ok", "username": "bob", "rating": 1350},
+        ])
+        assert not bridge._auth_result.empty()
+        result = bridge._auth_result.get()
+        assert result["type"] == "auth_ok"
+        assert result["rating"] == 1350
+
+    def test_authenticate_routes_auth_fail_to_queue(self):
+        bridge, _ = bridge_with_messages([
+            {"type": "assigned", "color": "w"},
+            {"type": "auth_fail", "reason": "invalid credentials"},
+        ])
+        assert not bridge._auth_result.empty()
+        result = bridge._auth_result.get()
+        assert result["type"] == "auth_fail"
+        assert result["reason"] == "invalid credentials"
+
+    def test_authenticate_sends_auth_message(self):
+        cm, ws = make_mock_ws([{"type": "assigned", "color": "w"}])
+        bridge = ServerBridge()
+        bridge._outgoing.put(
+            {"type": "auth", "action": "register", "username": "carol", "password": "p"}
+        )
+        with patch("client.server_bridge.websockets.connect", return_value=cm):
+            run(bridge._ws_loop())
+        auth_msgs = [m for m in ws.sent if m.get("type") == "auth"]
+        assert len(auth_msgs) == 1
+        assert auth_msgs[0]["username"] == "carol"
+        assert auth_msgs[0]["action"] == "register"
+
+
+# ---------------------------------------------------------------------------
+# poll_rating_update() — routes rating_update messages
+# ---------------------------------------------------------------------------
+
+class TestPollRatingUpdate:
+    def test_rating_update_routed_to_queue(self):
+        bridge, _ = bridge_with_messages([
+            {"type": "assigned", "color": "w"},
+            {"type": "rating_update", "username": "alice",
+             "old_rating": 1200, "new_rating": 1216, "delta": 16},
+        ])
+        result = bridge.poll_rating_update()
+        assert result is not None
+        assert result["type"] == "rating_update"
+        assert result["delta"] == 16
+        assert result["new_rating"] == 1216
+
+    def test_poll_rating_update_returns_none_when_empty(self):
+        bridge, _ = bridge_with_messages([
+            {"type": "assigned", "color": "w"},
+        ])
+        assert bridge.poll_rating_update() is None
+
+    def test_multiple_rating_updates_queued(self):
+        bridge, _ = bridge_with_messages([
+            {"type": "assigned", "color": "w"},
+            {"type": "rating_update", "username": "alice",
+             "old_rating": 1200, "new_rating": 1216, "delta": 16},
+            {"type": "rating_update", "username": "bob",
+             "old_rating": 1200, "new_rating": 1184, "delta": -16},
+        ])
+        r1 = bridge.poll_rating_update()
+        r2 = bridge.poll_rating_update()
+        assert r1["username"] == "alice"
+        assert r2["username"] == "bob"

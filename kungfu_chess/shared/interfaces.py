@@ -1,4 +1,3 @@
-# Interfaces decouple layers so tests can inject fakes without importing concrete classes.
 from abc import ABC, abstractmethod
 
 
@@ -77,5 +76,6 @@ class IRenderer(ABC):
 
 class IInputParser(ABC):
     @abstractmethod
-    def parse(self, raw: str) -> tuple: pass
-    """Returns (board_rows, commands)"""
+    def parse(self, raw: str) -> tuple:
+        """Returns (board_rows, commands)."""
+        pass

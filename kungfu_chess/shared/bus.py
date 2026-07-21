@@ -4,21 +4,17 @@ from typing import Callable
 
 
 class EventType(Enum):
-    PIECE_MOVED = auto()
+    PIECE_MOVED    = auto()
     PIECE_CAPTURED = auto()
-    PIECE_JUMPED = auto()
-    GAME_OVER = auto()
-    GAME_STARTED = auto()
-    SCORE_UPDATED = auto()   # kwargs: color, score, captured_ptype
-    MOVE_LOGGED = auto()     # kwargs: color, time_str, move_str
+    PIECE_JUMPED   = auto()
+    GAME_OVER      = auto()
+    GAME_STARTED   = auto()
+    SCORE_UPDATED  = auto()
+    MOVE_LOGGED    = auto()
 
 
 class EventBus:
-    """Synchronous pub/sub bus.
-
-    Subscribers register a callable per EventType.
-    Publishers call publish() and all registered callbacks are invoked immediately.
-    """
+    """Synchronous publish/subscribe bus. All callbacks are invoked immediately on publish."""
 
     def __init__(self):
         self._subscribers: dict[EventType, list[Callable]] = defaultdict(list)

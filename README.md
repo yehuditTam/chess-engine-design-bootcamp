@@ -31,6 +31,7 @@ kungfu_chess/
 └── shared/       — Constants, DTOs, interfaces, exceptions, validators, EventBus
 
 server/
+├── db.py           — SQLite user database (register, login, ELO ratings)
 ├── game_server.py  — Async WebSocket server (2-player slot management, 30 ms game loop)
 └── serializer.py   — GameSnapshot ↔ JSON conversion
 
@@ -72,7 +73,25 @@ Then each player connects with the client:
 python -m client.run_client
 ```
 
-You will be prompted for a username. The first connection is assigned White, the second Black.
+The terminal will prompt for authentication before the game starts:
+
+```
+Connecting to server...
+(l)ogin or (r)egister? l
+Username: Alice
+Password:
+Welcome, Alice! Rating: 1200
+You are playing as: WHITE
+```
+
+- Choose `r` to create a new account, `l` to log in to an existing one.
+- Passwords are stored as SHA-256 hashes in `server/users.db`.
+- After the game ends, both players' updated ELO ratings are printed:
+
+```
+Alice: 1216 (+16)
+Bob: 1184 (-16)
+```
 
 **Mouse controls:**
 - Left click — select a piece, then click destination to move
@@ -180,6 +199,20 @@ When the game ends an overlay displays:
 
 
 
+## Authentication & Ratings
+
+User accounts are stored in `server/users.db` (SQLite, created automatically on first run).
+
+| Feature | Detail |
+|---|---|
+| Registration | `(r)egister` at the login prompt — username must be unique |
+| Login | `(l)ogin` with existing credentials |
+| Password storage | SHA-256 hash — never stored in plaintext |
+| Starting rating | 1200 (ELO) |
+| Rating update | Applied after every game using ELO formula with K=32 |
+
+---
+
 ## WebSocket Protocol
 
 All messages are JSON. Server → client:
@@ -187,15 +220,19 @@ All messages are JSON. Server → client:
 | Message type | Fields | Description |
 |---|---|---|
 | `assigned` | `color` (`"w"` / `"b"`) | Sent immediately on connect |
+| `auth_ok` | `username`, `rating` | Auth succeeded |
+| `auth_fail` | `reason` | Auth failed (retry allowed) |
 | `state` | `board`, `black`, `white`, `game_over` | Broadcast every 30 ms |
 | `legal_moves` | `cell`, `moves` | Reply to a `legal_moves` request |
+| `rating_update` | `username`, `old_rating`, `new_rating`, `delta` | Sent to each player after game over |
 | `error` | `reason` | Sent when server is full |
 
 Client → server:
 
 | Message type | Fields | Description |
 |---|---|---|
-| `join` | `username` | First message after connect |
+| `auth` | `action` (`"login"`/`"register"`), `username`, `password` | Sent before join |
+| `join` | `username` | Sent after successful auth |
 | `move` | `from`, `to` | Request a piece move |
 | `jump` | `cell` | Request a piece jump |
 | `legal_moves` | `cell` | Request legal moves for a cell |

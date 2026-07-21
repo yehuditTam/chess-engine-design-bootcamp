@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from kungfu_chess.model.position import Position
 
-# Plain dataclasses (not frozen) so RealTimeArbiter and tests can mutate arrive_at/land_at
-# directly to simulate elapsed time without a fake clock.
+# Mutable so RealTimeArbiter and tests can adjust arrive_at/land_at directly.
 
 
 @dataclass

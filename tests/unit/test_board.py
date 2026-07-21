@@ -81,17 +81,20 @@ class TestInBounds:
 class TestBoardSnapshot:
     def test_snapshot_returns_piece_snapshots(self):
         from kungfu_chess.shared.dto import PieceSnapshot
-        board = make_board([['wR', '.']])
-        snap = board.snapshot()
-        assert snap.get(0, 0) == PieceSnapshot(Color.WHITE, PieceType.ROOK)
+        from kungfu_chess.realtime.game_engine import GameEngine
+        game = GameEngine([['wR', '.']])
+        snap = game.get_snapshot()
+        assert snap.get(0, 0).color == Color.WHITE
+        assert snap.get(0, 0).ptype == PieceType.ROOK
         assert snap.get(0, 1) is None
 
     def test_snapshot_is_immutable(self):
-        from kungfu_chess.shared.dto import PieceSnapshot
-        board = make_board([['wR', '.']])
-        snap = board.snapshot()
-        board.move_piece((0, 0), (0, 1))
-        assert snap.get(0, 0) == PieceSnapshot(Color.WHITE, PieceType.ROOK)
+        from kungfu_chess.realtime.game_engine import GameEngine
+        game = GameEngine([['wR', '.']])
+        snap = game.get_snapshot()
+        game.board.move_piece((0, 0), (0, 1))
+        # snapshot taken before the move must be unchanged
+        assert snap.get(0, 0).ptype == PieceType.ROOK
         assert snap.get(0, 1) is None
 
 

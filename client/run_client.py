@@ -63,12 +63,29 @@ class _RemoteGame:
         self._bridge.send_jump(cell)
 
 
+def _prompt_auth(bridge: ServerBridge) -> str:
+    """Terminal auth loop. Returns the authenticated username."""
+    while True:
+        action_raw = input("(l)ogin or (r)egister? ").strip().lower()
+        action = "register" if action_raw.startswith("r") else "login"
+        username = input("Username: ").strip()
+        password = input("Password: ").strip()
+        result = bridge.authenticate(username, password, action)
+        if result["type"] == "auth_ok":
+            print(f"Welcome, {result['username']}! Rating: {result['rating']}")
+            # send join so server can proceed
+            bridge._outgoing.put({"type": "join", "username": username})
+            return username
+        else:
+            print(f"Auth failed: {result.get('reason', 'unknown error')}")
+
+
 def main():
-    username = input("Enter username: ").strip()
     bridge = ServerBridge()
     print("Connecting to server...")
-    bridge.start(username)
-    print(f"Connected. You are playing as: {bridge.color().name}")
+    bridge.start()
+    _prompt_auth(bridge)
+    print(f"You are playing as: {bridge.color().name}")
 
     view = ImageView()
     remote_game = _RemoteGame(bridge, bridge.color())
@@ -131,6 +148,12 @@ def main():
         key = cv2.waitKey(30)
         if key == KEY_ESC or cv2.getWindowProperty(WINDOW_TITLE, cv2.WND_PROP_VISIBLE) < 1:
             break
+        # print rating update once available after game over
+        if remote_game.is_game_over:
+            ru = bridge.poll_rating_update()
+            if ru:
+                delta_str = f"+{ru['delta']}" if ru['delta'] >= 0 else str(ru['delta'])
+                print(f"{ru['username']}: {ru['new_rating']} ({delta_str})")
 
     cv2.destroyAllWindows()
 

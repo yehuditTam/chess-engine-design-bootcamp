@@ -1,20 +1,18 @@
-from kungfu_chess.shared.interfaces import IInputParser
 import pathlib
+from kungfu_chess.shared.interfaces import IInputParser
 
 
-def parse_input(lines):
-    """Splits raw input lines into board rows and command strings."""
+def parse_input(lines) -> tuple:
+    """Splits raw input lines into (board_rows, command_strings)."""
     board_rows, commands = [], []
     parsing_board = False
     for line in lines:
         line = line.strip()
         if line == "Board:":
             parsing_board = True
-            continue
-        if line == "Commands:":
+        elif line == "Commands:":
             parsing_board = False
-            continue
-        if parsing_board and line:
+        elif parsing_board and line:
             board_rows.append(line.split())
         elif not parsing_board and line:
             commands.append(line)
@@ -22,13 +20,12 @@ def parse_input(lines):
 
 
 def load_board_csv(path: str) -> list:
-    """Loads a board from a CSV file. Each cell is PieceTypeColor e.g. PW, RB."""
-    safe_path = pathlib.Path(path).resolve()
+    """Loads a board from a CSV file where each cell is a piece token like 'KW' or empty."""
     rows = []
-    with open(safe_path) as f:
+    with open(pathlib.Path(path).resolve()) as f:
         for line in f:
-            cells = line.strip().split(',')
-            rows.append([c[1].lower() + c[0] if len(c) == 2 else '.' for c in cells])
+            cells = line.strip().split(",")
+            rows.append([c[1].lower() + c[0] if len(c) == 2 else "." for c in cells])
     return rows
 
 

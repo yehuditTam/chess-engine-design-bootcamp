@@ -10,84 +10,78 @@ from kungfu_chess.view.sound_player import init_sounds
 from kungfu_chess.shared.bus import EventBus, EventType
 from kungfu_chess.shared.ui_constants import WINDOW_TITLE, KEY_ESC
 
-
-def ask_players():
-    black_name, white_name = ask_player_names()
-    return Player(black_name, Color.BLACK), Player(white_name, Color.WHITE)
+_BOARD_CSV = "assets/board.csv"
 
 
-rows = load_board_csv('assets/board.csv')
-black_player, white_player = ask_players()
-view = ImageView()
+class _Session:
+    """Holds mutable per-game state that bus callbacks need to write into."""
+    def __init__(self):
+        self.winner_name = ""
 
 
-class _State:
-    winner_name = None
-
-
-def _subscribe(bus: EventBus, game: GameEngine):
-    """Register all bus subscribers for one game session."""
+def _new_game(rows, black: Player, white: Player, view: ImageView) -> tuple:
+    """Creates a fresh GameEngine with all bus subscriptions wired. Returns (game, vc, session)."""
+    bus     = EventBus()
+    session = _Session()
+    game    = GameEngine(rows, black, white, bus=bus)
     init_sounds(bus)
+    bus.subscribe(EventType.GAME_STARTED, lambda **_: view.start_timer())
+    bus.subscribe(EventType.GAME_STARTED, lambda **_: view.trigger_game_start_animation())
+    bus.subscribe(EventType.GAME_OVER,    lambda **_: view.trigger_game_over_animation())
     bus.subscribe(
         EventType.GAME_OVER,
         lambda winner_color, **_: setattr(
-            _State, 'winner_name',
-            black_player.name if winner_color.value == 'b' else white_player.name
-        )
+            session, "winner_name",
+            black.name if winner_color == Color.BLACK else white.name
+        ),
     )
-    bus.subscribe(EventType.GAME_STARTED, lambda **_: view.trigger_game_start_animation())
-    bus.subscribe(EventType.GAME_OVER, lambda **_: view.trigger_game_over_animation())
-    # Timer starts on first move or jump (GAME_STARTED fires from engine)
-    bus.subscribe(EventType.GAME_STARTED, lambda **_: view.start_timer())
+    vc = ViewController(game, view)
+    return game, vc, session
 
 
-def new_game():
-    # Create a fresh bus each restart — avoids subscription accumulation
-    bus = EventBus()
-    game = GameEngine(rows, black_player, white_player, bus=bus)
-    _subscribe(bus, game)
-    return game
+def main():
+    black_name, white_name = ask_player_names()
+    black = Player(black_name, Color.BLACK)
+    white = Player(white_name, Color.WHITE)
+    rows  = load_board_csv(_BOARD_CSV)
+    view  = ImageView()
 
+    cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
+    scale = ImageView._get_scale(_WIN_W, _WIN_H)
+    cv2.resizeWindow(WINDOW_TITLE, int(_WIN_W * scale), int(_WIN_H * scale))
 
-game = new_game()
-vc = ViewController(game, view)
+    game, vc, session = _new_game(rows, black, white, view)
 
+    def on_click(event, mx, my, flags, param):
+        vc.on_mouse(event, mx, my)
 
-def on_click(event, mx, my, flags, param):
-    vc.on_mouse(event, mx, my)
+    cv2.setMouseCallback(WINDOW_TITLE, on_click)
 
-
-cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
-game.execute_pending_moves()
-_init_scale = ImageView._get_scale(_WIN_W, _WIN_H)
-cv2.resizeWindow(WINDOW_TITLE, int(_WIN_W * _init_scale), int(_WIN_H * _init_scale))
-snap = game.get_game_snapshot()
-view.render(snap.board, snap.black.name, snap.white.name, snap.black.score, snap.white.score,
+    while True:
+        game.execute_pending_moves()
+        snap = game.get_game_snapshot()
+        view.render(
+            snap.board,
+            snap.black.name, snap.white.name,
+            snap.black.score, snap.white.score,
             list(snap.black.moves), list(snap.white.moves),
-            list(snap.black.captured), list(snap.white.captured))
-cv2.waitKey(1)
-cv2.setMouseCallback(WINDOW_TITLE, on_click)
+            list(snap.black.captured), list(snap.white.captured),
+            selected=vc.selected,
+            legal_moves=vc.legal_moves,
+            feedback=vc.active_feedback(),
+            game_over=game.is_game_over,
+            winner_name=session.winner_name,
+        )
+        key = cv2.waitKey(30)
+        if key == KEY_ESC or cv2.getWindowProperty(WINDOW_TITLE, cv2.WND_PROP_VISIBLE) < 1:
+            break
+        if key in (ord("r"), ord("R")):
+            game, vc, session = _new_game(rows, black, white, view)
+            cv2.setMouseCallback(WINDOW_TITLE, lambda e, mx, my, f, p: vc.on_mouse(e, mx, my))
+            view.reset_timer()
 
-while True:
-    snap = game.get_game_snapshot()
-    view.render(snap.board,
-                snap.black.name, snap.white.name,
-                snap.black.score, snap.white.score,
-                list(snap.black.moves), list(snap.white.moves),
-                list(snap.black.captured), list(snap.white.captured),
-                selected=vc.selected,
-                legal_moves=vc.legal_moves,
-                feedback=vc.active_feedback(),
-                game_over=game.is_game_over,
-                winner_name=_State.winner_name)
-    game.execute_pending_moves()
-    key = cv2.waitKey(30)
-    if key == KEY_ESC or cv2.getWindowProperty(WINDOW_TITLE, cv2.WND_PROP_VISIBLE) < 1:
-        break
-    if key == ord('r') or key == ord('R'):
-        game = new_game()
-        vc = ViewController(game, view)
-        _State.winner_name = None
-        view.reset_timer()
+    cv2.destroyAllWindows()
 
-cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()

@@ -1,16 +1,3 @@
-"""
-WebSocket game server.
-
-Responsibilities:
-  - Accept exactly 2 player connections (first = WHITE, second = BLACK)
-  - Run the GameEngine tick every 30 ms and broadcast state to both clients
-  - Route move/jump commands from each client to the GameEngine
-  - Reject or queue extra connections until a slot is free
-
-Run with:
-    python -m server.game_server
-"""
-
 import asyncio
 import json
 import logging
@@ -21,6 +8,7 @@ from kungfu_chess.model.player import Player
 from kungfu_chess.shared.constants import Color
 from kungfu_chess.shared.bus import EventBus, EventType
 from server.serializer import snapshot_to_dict
+import server.db as db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [SERVER] %(message)s")
 log = logging.getLogger(__name__)
@@ -33,29 +21,24 @@ BOARD_CSV = "assets/board.csv"
 
 class GameServer:
     def __init__(self):
-        self._clients: dict[Color, object] = {}
-        self._usernames: dict[Color, str] = {}
-        self._game: GameEngine | None = None
+        self._clients:   dict[Color, object] = {}
+        self._usernames: dict[Color, str]    = {}
+        self._ratings:   dict[Color, int]    = {}
+        self._game:      GameEngine | None   = None
         self._lock = asyncio.Lock()
         self._pending_events: list = []
         self._game_start_time = 0.0
         self._winner_name = ""
 
-    # ------------------------------------------------------------------
-    # Public entry point
-    # ------------------------------------------------------------------
-
-    async def run(self):
+    async def run(self) -> None:
         import websockets
         log.info(f"Listening on ws://{HOST}:{PORT}")
         async with websockets.serve(self._on_connect, HOST, PORT):
             await asyncio.Future()
 
-    # ------------------------------------------------------------------
-    # Connection handler
-    # ------------------------------------------------------------------
+    # --- connection lifecycle ---
 
-    async def _on_connect(self, ws):
+    async def _on_connect(self, ws) -> None:
         color = await self._assign_color(ws)
         if color is None:
             await ws.send(json.dumps({"type": "error", "reason": "server_full"}))
@@ -65,16 +48,9 @@ class GameServer:
         log.info(f"{color.name} connected")
         await ws.send(json.dumps({"type": "assigned", "color": color.value}))
 
-        try:
-            raw = await ws.recv()
-            msg = json.loads(raw)
-            if msg.get("type") != "join":
-                await ws.close()
-                self._clients.pop(color, None)
-                return
-            self._usernames[color] = msg.get("username", color.name)
-        except Exception:
-            self._clients.pop(color, None)
+        if not await self._auth_loop(ws, color):
+            return
+        if not await self._await_join(ws, color):
             return
 
         if len(self._clients) == 2:
@@ -89,10 +65,6 @@ class GameServer:
             self._clients.pop(color, None)
             log.info(f"{color.name} left")
 
-    # ------------------------------------------------------------------
-    # Assign colors
-    # ------------------------------------------------------------------
-
     async def _assign_color(self, ws) -> Color | None:
         async with self._lock:
             if Color.WHITE not in self._clients:
@@ -103,45 +75,62 @@ class GameServer:
                 return Color.BLACK
             return None
 
-    # ------------------------------------------------------------------
-    # Start game
-    # ------------------------------------------------------------------
+    async def _auth_loop(self, ws, color: Color) -> bool:
+        """Loops until the client authenticates successfully. Returns False on disconnect."""
+        try:
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg.get("type") != "auth":
+                    await ws.close()
+                    self._clients.pop(color, None)
+                    return False
+                response = self._process_auth(msg, color)
+                await ws.send(json.dumps(response))
+                if response["type"] == "auth_ok":
+                    return True
+        except Exception:
+            self._clients.pop(color, None)
+            return False
 
-    async def _start_game(self):
+    def _process_auth(self, msg: dict, color: Color) -> dict:
+        """Validates credentials and returns auth_ok or auth_fail."""
+        username = msg.get("username", "").strip()
+        password = msg.get("password", "")
+        action   = msg.get("action", "login")
+        if not username:
+            return {"type": "auth_fail", "reason": "username required"}
+        if action == "register":
+            if not db.register(username, password):
+                return {"type": "auth_fail", "reason": "username taken"}
+        elif not db.authenticate(username, password):
+            return {"type": "auth_fail", "reason": "invalid credentials"}
+        rating = db.get_rating(username)
+        self._usernames[color] = username
+        self._ratings[color]   = rating
+        return {"type": "auth_ok", "username": username, "rating": rating}
+
+    async def _await_join(self, ws, color: Color) -> bool:
+        """Waits for the join message after auth. Returns False on failure."""
+        try:
+            msg = json.loads(await ws.recv())
+            if msg.get("type") != "join":
+                await ws.close()
+                self._clients.pop(color, None)
+                return False
+            return True
+        except Exception:
+            self._clients.pop(color, None)
+            return False
+
+    # --- game lifecycle ---
+
+    async def _start_game(self) -> None:
         rows = load_board_csv(BOARD_CSV)
         bus = EventBus()
         self._pending_events = []
         self._game_start_time = 0.0
         self._winner_name = ""
-
-        # Collect winner name on game over
-        bus.subscribe(
-            EventType.GAME_OVER,
-            lambda winner_color, **_: setattr(
-                self, '_winner_name',
-                self._usernames.get(
-                    Color.BLACK if winner_color == Color.BLACK else Color.WHITE,
-                    winner_color.name
-                )
-            )
-        )
-
-        # Queue every bus event for broadcast to clients
-        for ev_name, ev_type in (
-            ("game_started",    EventType.GAME_STARTED),
-            ("piece_moved",     EventType.PIECE_MOVED),
-            ("piece_captured",  EventType.PIECE_CAPTURED),
-            ("piece_jumped",    EventType.PIECE_JUMPED),
-            ("score_updated",   EventType.SCORE_UPDATED),
-            ("move_logged",     EventType.MOVE_LOGGED),
-            ("game_over",       EventType.GAME_OVER),
-        ):
-            def _make_handler(name):
-                def _h(**_kw):
-                    self._pending_events.append({"type": "event", "name": name})
-                return _h
-            bus.subscribe(ev_type, _make_handler(ev_name))
-
+        self._subscribe_bus(bus)
         self._game = GameEngine(
             rows,
             black=Player(self._usernames.get(Color.BLACK, "Black"), Color.BLACK),
@@ -151,11 +140,31 @@ class GameServer:
         log.info("Game started")
         asyncio.create_task(self._game_loop())
 
-    # ------------------------------------------------------------------
-    # Game loop
-    # ------------------------------------------------------------------
+    def _subscribe_bus(self, bus: EventBus) -> None:
+        """Wires bus events to winner tracking and client broadcast queue."""
+        bus.subscribe(
+            EventType.GAME_OVER,
+            lambda winner_color, **_: setattr(
+                self, "_winner_name",
+                self._usernames.get(winner_color, winner_color.name)
+            ),
+        )
+        for ev_name, ev_type in (
+            ("game_started",   EventType.GAME_STARTED),
+            ("piece_moved",    EventType.PIECE_MOVED),
+            ("piece_captured", EventType.PIECE_CAPTURED),
+            ("piece_jumped",   EventType.PIECE_JUMPED),
+            ("score_updated",  EventType.SCORE_UPDATED),
+            ("move_logged",    EventType.MOVE_LOGGED),
+            ("game_over",      EventType.GAME_OVER),
+        ):
+            def _make_handler(name):
+                def _h(**_kw):
+                    self._pending_events.append({"type": "event", "name": name})
+                return _h
+            bus.subscribe(ev_type, _make_handler(ev_name))
 
-    async def _game_loop(self):
+    async def _game_loop(self) -> None:
         while self._game is not None and not self._game.is_game_over:
             async with self._lock:
                 self._game.execute_pending_moves()
@@ -168,68 +177,84 @@ class GameServer:
                 )
                 state_msg = json.dumps(snapshot_to_dict(snap, False, elapsed, ""))
                 events, self._pending_events = self._pending_events, []
-
             await self._broadcast(state_msg)
             for ev in events:
                 await self._broadcast(json.dumps(ev))
             await asyncio.sleep(TICK_MS / 1000)
 
-        # final game-over state
         if self._game is not None:
-            snap = self._game.get_game_snapshot()
-            elapsed = (
-                _time.time() - self._game_start_time
-                if self._game_start_time > 0.0 else 0.0
-            )
-            state_msg = json.dumps(snapshot_to_dict(snap, True, elapsed, self._winner_name))
-            events, self._pending_events = self._pending_events, []
-            await self._broadcast(state_msg)
-            for ev in events:
-                await self._broadcast(json.dumps(ev))
+            await self._send_final_state()
+            await self._broadcast_rating_updates()
         log.info("Game over — loop stopped")
 
-    # ------------------------------------------------------------------
-    # Handle client messages
-    # ------------------------------------------------------------------
+    async def _send_final_state(self) -> None:
+        snap = self._game.get_game_snapshot()
+        elapsed = (
+            _time.time() - self._game_start_time if self._game_start_time > 0.0 else 0.0
+        )
+        await self._broadcast(json.dumps(snapshot_to_dict(snap, True, elapsed, self._winner_name)))
+        events, self._pending_events = self._pending_events, []
+        for ev in events:
+            await self._broadcast(json.dumps(ev))
 
-    async def _handle_message(self, raw: str, color: Color):
+    # --- message routing ---
+
+    async def _handle_message(self, raw: str, color: Color) -> None:
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
             return
-
         if self._game is None or self._game.is_game_over:
             return
-
         from kungfu_chess.model.position import Position
         async with self._lock:
             if msg["type"] == "move":
-                fr, to = msg["from"], msg["to"]
                 if self._game_start_time == 0.0:
                     self._game_start_time = _time.time()
-                self._game.request_move(Position(*fr), Position(*to))
+                self._game.request_move(Position(*msg["from"]), Position(*msg["to"]))
             elif msg["type"] == "jump":
-                cell = msg["cell"]
                 if self._game_start_time == 0.0:
                     self._game_start_time = _time.time()
-                self._game.handle_jump(Position(*cell))
+                self._game.handle_jump(Position(*msg["cell"]))
             elif msg["type"] == "legal_moves":
-                cell = msg["cell"]
-                moves = self._game.get_legal_moves(Position(*cell))
+                moves = self._game.get_legal_moves(Position(*msg["cell"]))
                 ws = self._clients.get(color)
                 if ws:
-                    reply = json.dumps({
+                    await ws.send(json.dumps({
                         "type": "legal_moves",
-                        "cell": cell,
+                        "cell": msg["cell"],
                         "moves": [[p.row, p.col] for p in moves],
-                    })
-                    await ws.send(reply)
+                    }))
 
-    # ------------------------------------------------------------------
-    # Broadcast
-    # ------------------------------------------------------------------
+    # --- rating updates ---
 
-    async def _broadcast(self, msg: str):
+    async def _broadcast_rating_updates(self) -> None:
+        """Computes ELO deltas and sends a rating_update message to each client."""
+        winner_color = next(
+            (c for c, name in self._usernames.items() if name == self._winner_name), None
+        )
+        if winner_color is None or len(self._usernames) < 2:
+            return
+        loser_color  = Color.BLACK if winner_color == Color.WHITE else Color.WHITE
+        w_delta, l_delta = db.update_ratings(
+            self._usernames[winner_color], self._usernames[loser_color]
+        )
+        for color, delta in ((winner_color, w_delta), (loser_color, l_delta)):
+            ws = self._clients.get(color)
+            if ws:
+                old = self._ratings.get(color, 1200)
+                try:
+                    await ws.send(json.dumps({
+                        "type":       "rating_update",
+                        "username":   self._usernames[color],
+                        "old_rating": old,
+                        "new_rating": old + delta,
+                        "delta":      delta,
+                    }))
+                except Exception:
+                    pass
+
+    async def _broadcast(self, msg: str) -> None:
         for ws in list(self._clients.values()):
             try:
                 await ws.send(msg)

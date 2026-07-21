@@ -3,15 +3,15 @@ from kungfu_chess.shared.exceptions import (
     OutOfBoundsError, BlockedPathError, FriendlyFireError, InvalidMoveError
 )
 
-# RuleEngine is read-only so Board stays a pure data store with no validation logic.
-# GameEngine owns RuleEngine and calls it before scheduling — validation never happens inside Board.
-
 
 class RuleEngine:
+    """Read-only validator. Never mutates the board."""
+
     def __init__(self, board):
         self._board = board
 
-    def is_legal(self, start: Position, end: Position, piece, pending_starts=()):
+    def is_legal(self, start: Position, end: Position, piece, pending_starts=()) -> bool:
+        """Raises an exception if the move is illegal, returns True otherwise."""
         if not (0 <= end.row < self._board.rows() and 0 <= end.col < self._board.cols()):
             raise OutOfBoundsError(f"Target {end} is out of bounds")
         target = self._board.get_piece(*end)
@@ -23,7 +23,8 @@ class RuleEngine:
             raise FriendlyFireError(f"Cannot capture own piece at {end}")
         return True
 
-    def _is_path_clear(self, start: Position, end: Position, pending_starts=()):
+    def _is_path_clear(self, start: Position, end: Position, pending_starts=()) -> bool:
+        """Returns True if no piece occupies any square between start and end."""
         dr, dc = start.direction_to(end)
         curr = Position(start.row + dr, start.col + dc)
         while curr != end:

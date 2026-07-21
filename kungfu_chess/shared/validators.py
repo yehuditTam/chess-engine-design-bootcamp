@@ -1,15 +1,14 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 from kungfu_chess.shared.constants import PieceType, Color
 
-_VALID_TOKENS = {c.value + p.value for c in Color for p in PieceType} | {'.'}
+_VALID_TOKENS = {c.value + p.value for c in Color for p in PieceType} | {"."}
 
 
 @dataclass
 class ValidationError:
     code: str
-    row: Optional[int] = field(default=None)
-    token: Optional[str] = field(default=None)
+    row: int = None
+    token: str = None
 
     def __str__(self):
         parts = [f"ERROR {self.code}"]
@@ -20,7 +19,8 @@ class ValidationError:
         return " ".join(parts)
 
 
-def validate_board(board_rows):
+def validate_board(board_rows) -> list[ValidationError]:
+    """Returns a list of errors found in the board layout, or an empty list if valid."""
     if not board_rows:
         return [ValidationError(code="EMPTY_BOARD")]
     errors = []

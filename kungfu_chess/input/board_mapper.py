@@ -5,6 +5,7 @@ from kungfu_chess.shared.ui_constants import TILE_SIZE
 
 
 def parse(cmd: str) -> Command:
+    """Converts a raw command string into a typed Command object."""
     if cmd == "print board":
         return PrintBoardCommand()
     parts = cmd.split()

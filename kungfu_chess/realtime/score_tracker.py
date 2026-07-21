@@ -32,19 +32,19 @@ class ScoreTracker:
     def moves(self) -> list:
         return list(self._moves)
 
+    @property
+    def captured(self) -> list:
+        return list(self._captured)
+
     def record_move(self, ptype: PieceType, start, end, elapsed_secs: float = 0.0) -> tuple:
-        """Record a move and return (time_str, move_str) for bus publishing."""
+        """Returns (time_str, move_str) for bus publishing."""
         t = f"{int(elapsed_secs) // 60:02}:{int(elapsed_secs) % 60:02}"
         move_str = f"{ptype.value} {_cell_name(start)}->{_cell_name(end)}"
         self._moves.append((t, move_str))
         return t, move_str
 
     def record_capture(self, captured_ptype: PieceType) -> int:
-        """Record a capture and return the new score."""
+        """Adds piece value to score and returns the new total."""
         self._score += _PIECE_VALUE[captured_ptype]
         self._captured.append(captured_ptype)
         return self._score
-
-    @property
-    def captured(self) -> list:
-        return list(self._captured)

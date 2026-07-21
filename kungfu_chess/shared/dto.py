@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
 from kungfu_chess.shared.constants import PieceType, Color, PieceState
 
+# frozen=True enforces immutability — view and tests can never accidentally mutate game state.
 
-# frozen=True enforces immutability so view and tests can never accidentally mutate game state
-# through a snapshot reference.
+
 @dataclass(frozen=True)
 class PieceSnapshot:
     color: Color
@@ -23,7 +22,7 @@ class BoardSnapshot:
     rows: int
     cols: int
 
-    def get(self, row, col) -> Optional[PieceSnapshot]:
+    def get(self, row: int, col: int) -> PieceSnapshot | None:
         return self.grid[row][col]
 
 
@@ -38,8 +37,8 @@ class PlayerSnapshot:
     name: str
     color: Color
     score: int
-    moves: Tuple  # tuple of (time_str, move_str)
-    captured: Tuple = ()  # tuple of PieceType
+    moves: tuple
+    captured: tuple = ()
 
 
 @dataclass(frozen=True)
