@@ -37,6 +37,7 @@ server/
 
 client/
 ├── server_bridge.py  — Thread-safe bridge between asyncio WebSocket and OpenCV loop
+├── auth.py           — Terminal authentication prompt (login / register)
 └── run_client.py     — OpenCV client that connects to the server
 
 tests/
@@ -85,7 +86,7 @@ You are playing as: WHITE
 ```
 
 - Choose `r` to create a new account, `l` to log in to an existing one.
-- Passwords are stored as SHA-256 hashes in `server/users.db`.
+- Passwords are stored as PBKDF2-HMAC-SHA256 hashes with a random salt in `server/users.db`.
 - After the game ends, both players' updated ELO ratings are printed:
 
 ```
@@ -207,7 +208,7 @@ User accounts are stored in `server/users.db` (SQLite, created automatically on 
 |---|---|
 | Registration | `(r)egister` at the login prompt — username must be unique |
 | Login | `(l)ogin` with existing credentials |
-| Password storage | SHA-256 hash — never stored in plaintext |
+| Password storage | PBKDF2-HMAC-SHA256 with random salt (260k iterations) — never stored in plaintext |
 | Starting rating | 1200 (ELO) |
 | Rating update | Applied after every game using ELO formula with K=32 |
 
