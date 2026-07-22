@@ -1,4 +1,17 @@
 from abc import ABC, abstractmethod
+from kungfu_chess.shared.constants import PieceType
+
+
+def make_strategy(ptype, color, start_row, promo_row):
+    if ptype == PieceType.PAWN:
+        return PawnStrategy(color, start_row, promo_row)
+    return {
+        PieceType.KING:   KingStrategy,
+        PieceType.ROOK:   RookStrategy,
+        PieceType.BISHOP: BishopStrategy,
+        PieceType.QUEEN:  QueenStrategy,
+        PieceType.KNIGHT: KnightStrategy,
+    }[ptype]()
 
 
 class MoveStrategy(ABC):

@@ -119,7 +119,7 @@ class TestReceiverState:
             black=PlayerSnapshot("B", Color.BLACK, 0, (), ()),
             white=PlayerSnapshot("W", Color.WHITE, 0, (), ()),
         )
-        return snapshot_to_dict(snap, False)
+        return snapshot_to_dict(snap)
 
     def test_state_message_put_in_incoming(self):
         bridge, _ = bridge_with_messages([
@@ -135,8 +135,8 @@ class TestReceiverState:
         ])
         result = bridge.poll_state()
         assert result is not None
-        snap, game_over, _, _ = result
-        assert game_over is False
+        snap, _, _ = result
+        assert snap.game_over is False
 
     def test_poll_state_returns_none_when_empty(self):
         bridge, _ = bridge_with_messages([

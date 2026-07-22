@@ -1,8 +1,8 @@
 import time
 import cv2
 import numpy as np
-from kungfu_chess.shared.constants import JUMP_DURATION_SECONDS
-from kungfu_chess.shared.ui_constants import LABEL_PAD
+from kungfu_chess.shared.constants import JUMP_DURATION_SECONDS, PieceState
+from kungfu_chess.shared.ui_constants import LABEL_PAD, BOARD_CELLS
 from kungfu_chess.view.sprite_loader import SpriteLoader
 
 _TEXT_COLOR    = (230, 230, 230)
@@ -35,7 +35,7 @@ class BoardRenderer:
 
     def _draw_piece(self, canvas, piece, row, col, board_x, board_y, tile, game_over) -> None:
         anim_offset = self._anim_offset(piece, row, col)
-        state = "jumping" if piece.is_airborne else piece.state.value
+        state = "jumping" if piece.state == PieceState.AIRBORNE else piece.state.value
         sprite = self._loader.load_piece_sprite(
             piece.ptype.value, piece.color.value, int(tile * _SPRITE_SCALE), state, anim_offset
         )
@@ -49,36 +49,36 @@ class BoardRenderer:
     def _anim_offset(self, piece, row: int, col: int) -> float:
         """Returns an animation time offset — synced to jump start or staggered by position."""
         key = (row, col)
-        if piece.is_airborne:
+        if piece.state == PieceState.AIRBORNE:
             if key not in self._jump_start:
                 self._jump_start[key] = time.time()
             return -self._jump_start[key]
         self._jump_start.pop(key, None)
-        return (row * 8 + col) * _ANIM_STAGGER
+        return (row * BOARD_CELLS + col) * _ANIM_STAGGER
 
     def _draw_countdown_arc(self, canvas, piece, board_x, board_y, row, col, tile) -> None:
         cx = board_x + col * tile + tile // 2
         cy = board_y + row * tile + tile // 2
         r = int(tile * _ARC_RADIUS)
-        if piece.is_cooling and piece.cooldown_ends_at > 0:
+        if piece.state == PieceState.COOLING and piece.cooldown_ends_at > 0:
             total = piece.cooldown_ends_at - piece.cooldown_started_at
             remaining = piece.cooldown_ends_at - time.time()
             frac = max(0.0, min(1.0, remaining / total)) if total > 0 else 0.0
             self._draw_arc(canvas, cx, cy, r, frac, _ARC_BG, _ARC_COOLDOWN)
-        elif piece.is_airborne and piece.jump_started_at > 0:
+        elif piece.state == PieceState.AIRBORNE and piece.jump_started_at > 0:
             elapsed = time.time() - piece.jump_started_at
             frac = max(0.0, min(1.0, 1.0 - elapsed / JUMP_DURATION_SECONDS))
             self._draw_arc(canvas, cx, cy, r, frac, _ARC_BG, _ARC_JUMP)
 
     def _draw_labels(self, canvas, board_x: int, board_y: int, tile: int) -> None:
-        board_px = tile * 8
+        board_px = tile * BOARD_CELLS
         for c, lbl in enumerate(_COL_LABELS):
             cx = board_x + c * tile + tile // 2
             self._text(canvas, lbl, cx, board_y - LABEL_PAD // 2)
             self._text(canvas, lbl, cx, board_y + board_px + LABEL_PAD // 2)
-        for r in range(8):
+        for r in range(BOARD_CELLS):
             cy = board_y + r * tile + tile // 2
-            lbl = str(8 - r)
+            lbl = str(BOARD_CELLS - r)
             self._text(canvas, lbl, board_x - LABEL_PAD // 2, cy)
             self._text(canvas, lbl, board_x + board_px + LABEL_PAD // 2, cy)
 

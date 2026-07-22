@@ -5,7 +5,7 @@ from kungfu_chess.shared.constants import Color
 from kungfu_chess.io.board_parser import load_board_csv
 from kungfu_chess.view.view_controller import ViewController
 from kungfu_chess.view.image_view import ImageView, _WIN_W, _WIN_H
-from kungfu_chess.view.name_dialog import ask_player_names
+from kungfu_chess.view.name_dialog import ask_player_names, get_screen_scale
 from kungfu_chess.view.sound_player import init_sounds
 from kungfu_chess.shared.bus import EventBus, EventType
 from kungfu_chess.shared.ui_constants import WINDOW_TITLE, KEY_ESC
@@ -47,7 +47,7 @@ def main():
     view  = ImageView()
 
     cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
-    scale = ImageView._get_scale(_WIN_W, _WIN_H)
+    scale = get_screen_scale(_WIN_W, _WIN_H)
     cv2.resizeWindow(WINDOW_TITLE, int(_WIN_W * scale), int(_WIN_H * scale))
 
     game, vc, session = _new_game(rows, black, white, view)

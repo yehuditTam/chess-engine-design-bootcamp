@@ -4,7 +4,7 @@ from kungfu_chess.model.position import Position
 from kungfu_chess.model.player import Player
 from kungfu_chess.rules.rule_engine import RuleEngine
 from kungfu_chess.realtime.real_time_arbiter import RealTimeArbiter
-from kungfu_chess.realtime.score_tracker import ScoreTracker
+from kungfu_chess.realtime.player_stats_tracker import PlayerStatsTracker
 from kungfu_chess.shared.constants import PieceState, Color
 from kungfu_chess.shared.dto import (
     MoveResult, PieceSnapshot, BoardSnapshot, PlayerSnapshot, GameSnapshot
@@ -24,8 +24,8 @@ class GameEngine(IGame):
         self._rule_engine = RuleEngine(self._board)
         self._arbiter = RealTimeArbiter(self._board)
         self._trackers = {
-            Color.BLACK: ScoreTracker(black or Player("Player 1", Color.BLACK)),
-            Color.WHITE: ScoreTracker(white or Player("Player 2", Color.WHITE)),
+            Color.BLACK: PlayerStatsTracker(black or Player("Player 1", Color.BLACK)),
+            Color.WHITE: PlayerStatsTracker(white or Player("Player 2", Color.WHITE)),
         }
         self._bus = bus or EventBus()
         self._game_start_time: float = None
@@ -45,6 +45,7 @@ class GameEngine(IGame):
             board=self.get_snapshot(),
             black=self._player_snapshot(Color.BLACK),
             white=self._player_snapshot(Color.WHITE),
+            game_over=self.is_game_over,
         )
 
     def _piece_snapshot(self, r: int, c: int) -> PieceSnapshot | None:
@@ -52,16 +53,11 @@ class GameEngine(IGame):
         if piece is None:
             return None
         pos = Position(r, c)
-        cooldown = next((cd for cd in self._arbiter.pending_cooldowns if cd.cell == pos), None)
-        jump = next((j for j in self._arbiter.pending_jumps if j.cell == pos), None)
+        state = PieceState.AIRBORNE if self._arbiter.is_airborne(pos) else piece.state
         return PieceSnapshot(
-            piece.color, piece.ptype,
-            piece.state == PieceState.COOLING,
-            piece.state,
-            self._arbiter.is_airborne(pos),
-            cooldown.ready_at if cooldown else 0.0,
-            cooldown.started_at if cooldown else 0.0,
-            jump.started_at if jump else 0.0,
+            piece.color, piece.ptype, state,
+            *self._arbiter.cooldown_times(pos),
+            self._arbiter.jump_started_at(pos),
         )
 
     def _player_snapshot(self, color: Color) -> PlayerSnapshot:
@@ -72,7 +68,7 @@ class GameEngine(IGame):
 
     def execute_pending_moves(self) -> None:
         """Resolves all arrived moves and publishes resulting events."""
-        completed, jump_captures, game_over_target, _ = self._arbiter.execute_pending_moves()
+        completed, jump_captures, game_over_target = self._arbiter.execute_pending_moves()
         game_over_pending = game_over_target is not None
 
         for start, end, ptype, color, captured_ptype in completed:
@@ -127,21 +123,19 @@ class GameEngine(IGame):
         if piece is None:
             return []
         pending_starts = {m.start for m in self._arbiter.pending_moves}
-        moves = []
-        for r in range(self._board.rows()):
-            for c in range(self._board.cols()):
-                end = Position(r, c)
-                try:
-                    self._rule_engine.is_legal(start, end, piece, pending_starts)
-                    moves.append(end)
-                except (InvalidMoveError, FriendlyFireError, OutOfBoundsError, BlockedPathError):
-                    pass
-        return moves
-
-    def advance_time(self, milliseconds: int) -> None:
-        self._arbiter.advance_time(milliseconds)
+        all_cells = [
+            Position(r, c)
+            for r in range(self._board.rows())
+            for c in range(self._board.cols())
+        ]
+        return [end for end in all_cells if self._is_legal_quiet(start, end, piece, pending_starts)]
 
     # --- private helpers ---
+
+    @property
+    def game_start_time(self) -> float:
+        """Unix timestamp of the first move/jump, or 0.0 if not yet started."""
+        return self._game_start_time or 0.0
 
     def _ensure_started(self) -> None:
         """Fires GAME_STARTED on the first move or jump."""
@@ -163,8 +157,8 @@ class GameEngine(IGame):
         target = self._board.get_piece(*end)
         if target is not None and target.color == piece.color:
             raise FriendlyFireError(f"Friendly piece at {end}")
-        moving_colors = self._arbiter.moving_colors()
-        if moving_colors and piece.color not in moving_colors:
+        moving_color = self._arbiter.moving_color()
+        if moving_color is not None and piece.color != moving_color:
             raise MotionInProgressError(f"Cannot move {piece}: opponent motion in progress")
         pending_starts = {m.start for m in self._arbiter.pending_moves}
         if self._rule_engine.is_legal(start, end, piece, pending_starts):
@@ -187,12 +181,22 @@ class GameEngine(IGame):
                           captured_ptype=captured_ptype)
 
     def _check_promotion(self, end: Position) -> None:
-        from kungfu_chess.rules.piece_rules import QueenStrategy
+        from kungfu_chess.rules.piece_rules import QueenStrategy  # avoid circular import
         piece = self._board.get_piece(*end)
         if piece is not None and piece.should_promote(end.row):
             piece.promote(QueenStrategy())
 
+    def _is_legal_quiet(self, start, end, piece, pending_starts) -> bool:
+        """Returns True if the move is legal, False instead of raising."""
+        try:
+            return self._rule_engine.is_legal(start, end, piece, pending_starts)
+        except (InvalidMoveError, FriendlyFireError, OutOfBoundsError, BlockedPathError):
+            return False
+
     # --- test helpers ---
+
+    def advance_time(self, milliseconds: int) -> None:
+        self._arbiter.advance_time(milliseconds)
 
     def _expire_pending_moves(self):
         for m in self._arbiter.pending_moves:

@@ -39,9 +39,6 @@ class IBoard(ABC):
     @abstractmethod
     def remove_piece(self, row, col): pass
 
-    @abstractmethod
-    def snapshot(self): pass
-
 
 class IGame(ABC):
     @abstractmethod

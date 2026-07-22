@@ -336,12 +336,13 @@ class TestCooldown:
         assert result.ok
 
     def test_snapshot_shows_is_cooling(self):
+        from kungfu_chess.shared.constants import PieceState
         game = Game(BOARD_ROOKS)
         game.request_move(p(0, 0), p(0, 1))
         game.pending_moves[0].arrive_at = time.time() - 1
         game.execute_pending_moves()
         snap = game.get_snapshot()
-        assert snap.get(0, 1).is_cooling is True
+        assert snap.get(0, 1).state == PieceState.COOLING
 
     def test_snapshot_not_cooling_after_expiry(self):
         game = Game(BOARD_ROOKS)
@@ -351,7 +352,8 @@ class TestCooldown:
         game.pending_cooldowns[0].ready_at = time.time() - 1
         game.execute_pending_moves()
         snap = game.get_snapshot()
-        assert snap.get(0, 1).is_cooling is False
+        from kungfu_chess.shared.constants import PieceState
+        assert snap.get(0, 1).state == PieceState.IDLE
 
     def test_advance_time_expires_cooldown(self):
         from kungfu_chess.shared.constants import COOLDOWN_SECONDS
@@ -551,37 +553,60 @@ class TestGameSnapshot:
         assert snap.white.score == 5  # wR captured bR
 
 
-class TestScoreTracker:
+class TestPlayerStatsTracker:
     def test_record_move_adds_entry(self):
-        from kungfu_chess.realtime.score_tracker import ScoreTracker
+        from kungfu_chess.realtime.player_stats_tracker import PlayerStatsTracker
         from kungfu_chess.model.player import Player
         from kungfu_chess.shared.constants import Color, PieceType
-        tracker = ScoreTracker(Player("X", Color.WHITE))
+        tracker = PlayerStatsTracker(Player("X", Color.WHITE))
         tracker.record_move(PieceType.ROOK, p(0, 0), p(0, 2), elapsed_secs=5.0)
         assert len(tracker.moves) == 1
         assert 'R' in tracker.moves[0][1]
 
     def test_record_capture_updates_score(self):
-        from kungfu_chess.realtime.score_tracker import ScoreTracker
+        from kungfu_chess.realtime.player_stats_tracker import PlayerStatsTracker
         from kungfu_chess.model.player import Player
         from kungfu_chess.shared.constants import Color, PieceType
-        tracker = ScoreTracker(Player("X", Color.WHITE))
+        tracker = PlayerStatsTracker(Player("X", Color.WHITE))
         tracker.record_capture(PieceType.QUEEN)
         assert tracker.score == 9
         assert PieceType.QUEEN in tracker.captured
 
     def test_captured_returns_copy(self):
-        from kungfu_chess.realtime.score_tracker import ScoreTracker
+        from kungfu_chess.realtime.player_stats_tracker import PlayerStatsTracker
         from kungfu_chess.model.player import Player
         from kungfu_chess.shared.constants import Color, PieceType
-        tracker = ScoreTracker(Player("X", Color.WHITE))
+        tracker = PlayerStatsTracker(Player("X", Color.WHITE))
         tracker.record_capture(PieceType.PAWN)
         captured = tracker.captured
         captured.clear()
         assert len(tracker.captured) == 1
 
 
-class TestInvalidBoardError:
+class TestGameStartTime:
+    def test_game_start_time_zero_before_first_move(self):
+        game = Game(BOARD_ROOKS)
+        assert game.game_start_time == 0.0
+
+    def test_game_start_time_set_after_first_move(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        assert game.game_start_time > 0.0
+
+    def test_game_start_time_set_after_jump(self):
+        game = Game(BOARD_JUMP)
+        game.handle_jump(p(1, 1))
+        assert game.game_start_time > 0.0
+
+    def test_game_start_time_does_not_change_on_second_move(self):
+        game = Game(BOARD_ROOKS)
+        game.request_move(p(0, 0), p(0, 1))
+        t1 = game.game_start_time
+        game.request_move(p(2, 0), p(2, 1))
+        assert game.game_start_time == t1
+
+
+
     def test_stores_errors(self):
         from kungfu_chess.shared.exceptions import InvalidBoardError
         err = InvalidBoardError(["e1", "e2"])
@@ -621,7 +646,7 @@ class TestKnightScheduleMove:
         assert piece is not None
         assert piece.color == Color.WHITE
         assert piece.ptype == PieceType.PAWN
-        assert piece.is_cooling is True
+        assert piece.state == PieceState.COOLING
         assert piece.state == PieceState.COOLING
         assert snap.get(6, 1) is None
 

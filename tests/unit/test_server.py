@@ -419,18 +419,18 @@ class TestHandleMessage:
 
     def test_move_sets_game_start_time(self):
         server, _ = self._server_with_game()
-        assert server._game_start_time == 0.0
+        assert server._game.game_start_time == 0.0
         run(server._handle_message(
             json.dumps({"type": "move", "from": [0, 0], "to": [0, 1]}), Color.WHITE
         ))
-        assert server._game_start_time > 0.0
+        assert server._game.game_start_time > 0.0
 
     def test_jump_sets_game_start_time(self):
         server, _ = self._server_with_game()
         run(server._handle_message(
             json.dumps({"type": "jump", "cell": [0, 0]}), Color.WHITE
         ))
-        assert server._game_start_time > 0.0
+        assert server._game.game_start_time > 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -65,15 +65,33 @@ class TestAuthenticate:
     def test_password_is_hashed_not_plaintext(self, db):
         db.register("alice", "mypassword")
         import sqlite3
-        import server.db as raw_db
-        with patch.object(raw_db, "_DB_PATH", db._DB_PATH):
-            con = sqlite3.connect(db._DB_PATH)
-            row = con.execute(
-                "SELECT password_hash FROM users WHERE username = ?", ("alice",)
-            ).fetchone()
-            con.close()
+        con = sqlite3.connect(db._DB_PATH)
+        row = con.execute(
+            "SELECT password_hash, salt FROM users WHERE username = ?", ("alice",)
+        ).fetchone()
+        con.close()
         assert row[0] != "mypassword"
-        assert len(row[0]) == 64  # SHA-256 hex digest
+        assert row[1] is not None          # salt stored
+        assert len(row[1]) == 64           # 32 bytes as hex
+
+    def test_different_users_have_different_salts(self, db):
+        db.register("alice", "same")
+        db.register("bob", "same")
+        import sqlite3
+        con = sqlite3.connect(db._DB_PATH)
+        rows = con.execute("SELECT salt FROM users").fetchall()
+        con.close()
+        salts = [r[0] for r in rows]
+        assert salts[0] != salts[1]
+
+    def test_same_password_different_hash_per_user(self, db):
+        db.register("alice", "same")
+        db.register("bob", "same")
+        import sqlite3
+        con = sqlite3.connect(db._DB_PATH)
+        rows = con.execute("SELECT password_hash FROM users").fetchall()
+        con.close()
+        assert rows[0][0] != rows[1][0]
 
 
 # ---------------------------------------------------------------------------

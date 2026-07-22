@@ -1,6 +1,18 @@
 import tkinter as tk
 
 
+def get_screen_scale(win_w: int, win_h: int) -> float:
+    """Returns a scale factor so the window fits 90% of the screen."""
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return 1.0
+    return min(sw * 0.9 / win_w, sh * 0.9 / win_h, 1.0)
+
+
 def ask_player_names() -> tuple[str, str]:
     """Show a tkinter dialog and return (black_name, white_name)."""
     result = ["Black", "White"]

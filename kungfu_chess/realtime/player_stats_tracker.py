@@ -17,7 +17,7 @@ def _cell_name(pos) -> str:
     return f"{_COL_LETTERS[pos.col]}{8 - pos.row}"
 
 
-class ScoreTracker:
+class PlayerStatsTracker:
     def __init__(self, player: Player):
         self.player = player
         self._score = 0

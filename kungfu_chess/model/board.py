@@ -1,20 +1,8 @@
 from kungfu_chess.shared.constants import PieceType, Color
 from kungfu_chess.model.piece import Piece
-from kungfu_chess.rules.piece_rules import (
-    KingStrategy, RookStrategy, BishopStrategy,
-    QueenStrategy, KnightStrategy, PawnStrategy,
-)
+from kungfu_chess.rules.piece_rules import make_strategy
 from kungfu_chess.shared.interfaces import IBoard
 from kungfu_chess.shared.exceptions import InvalidMoveError
-
-_STRATEGY_MAP = {
-    PieceType.KING:   lambda color, start_row, promo_row: KingStrategy(),
-    PieceType.ROOK:   lambda color, start_row, promo_row: RookStrategy(),
-    PieceType.BISHOP: lambda color, start_row, promo_row: BishopStrategy(),
-    PieceType.QUEEN:  lambda color, start_row, promo_row: QueenStrategy(),
-    PieceType.KNIGHT: lambda color, start_row, promo_row: KnightStrategy(),
-    PieceType.PAWN:   lambda color, start_row, promo_row: PawnStrategy(color, start_row, promo_row),
-}
 
 
 class Board(IBoard):
@@ -33,7 +21,7 @@ class Board(IBoard):
         ptype = PieceType(token[1])
         promo_row = 0 if color == Color.WHITE else num_rows - 1
         start_row = num_rows - 2 if color == Color.WHITE else 1
-        strategy = _STRATEGY_MAP[ptype](color, start_row, promo_row)
+        strategy = make_strategy(ptype, color, start_row, promo_row)
         return Piece(color, ptype, move_strategy=strategy)
 
     def get_piece(self, row: int, col: int) -> Piece | None:
@@ -61,7 +49,3 @@ class Board(IBoard):
 
     def remove_piece(self, row: int, col: int) -> None:
         self.grid[row][col] = None
-
-    def snapshot(self):
-        """Delegates to GameEngine.get_snapshot() — not used directly."""
-        raise NotImplementedError("Use GameEngine.get_snapshot() instead")

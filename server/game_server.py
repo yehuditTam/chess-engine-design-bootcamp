@@ -1,12 +1,12 @@
 import asyncio
 import json
 import logging
-import time as _time
 from kungfu_chess.realtime.game_engine import GameEngine
 from kungfu_chess.io.board_parser import load_board_csv
 from kungfu_chess.model.player import Player
 from kungfu_chess.shared.constants import Color
 from kungfu_chess.shared.bus import EventBus, EventType
+from kungfu_chess.model.position import Position
 from server.serializer import snapshot_to_dict
 import server.db as db
 
@@ -20,6 +20,16 @@ BOARD_CSV = "assets/board.csv"
 
 
 class GameServer:
+    _EVENT_NAMES = {
+        EventType.GAME_STARTED:   "game_started",
+        EventType.PIECE_MOVED:    "piece_moved",
+        EventType.PIECE_CAPTURED: "piece_captured",
+        EventType.PIECE_JUMPED:   "piece_jumped",
+        EventType.SCORE_UPDATED:  "score_updated",
+        EventType.MOVE_LOGGED:    "move_logged",
+        EventType.GAME_OVER:      "game_over",
+    }
+
     def __init__(self):
         self._clients:   dict[Color, object] = {}
         self._usernames: dict[Color, str]    = {}
@@ -27,7 +37,6 @@ class GameServer:
         self._game:      GameEngine | None   = None
         self._lock = asyncio.Lock()
         self._pending_events: list = []
-        self._game_start_time = 0.0
         self._winner_name = ""
 
     async def run(self) -> None:
@@ -128,7 +137,6 @@ class GameServer:
         rows = load_board_csv(BOARD_CSV)
         bus = EventBus()
         self._pending_events = []
-        self._game_start_time = 0.0
         self._winner_name = ""
         self._subscribe_bus(bus)
         self._game = GameEngine(
@@ -142,27 +150,15 @@ class GameServer:
 
     def _subscribe_bus(self, bus: EventBus) -> None:
         """Wires bus events to winner tracking and client broadcast queue."""
-        bus.subscribe(
-            EventType.GAME_OVER,
-            lambda winner_color, **_: setattr(
-                self, "_winner_name",
-                self._usernames.get(winner_color, winner_color.name)
-            ),
-        )
-        for ev_name, ev_type in (
-            ("game_started",   EventType.GAME_STARTED),
-            ("piece_moved",    EventType.PIECE_MOVED),
-            ("piece_captured", EventType.PIECE_CAPTURED),
-            ("piece_jumped",   EventType.PIECE_JUMPED),
-            ("score_updated",  EventType.SCORE_UPDATED),
-            ("move_logged",    EventType.MOVE_LOGGED),
-            ("game_over",      EventType.GAME_OVER),
-        ):
-            def _make_handler(name):
-                def _h(**_kw):
-                    self._pending_events.append({"type": "event", "name": name})
-                return _h
-            bus.subscribe(ev_type, _make_handler(ev_name))
+        bus.subscribe(EventType.GAME_OVER, self._on_game_over)
+        for ev_type, name in self._EVENT_NAMES.items():
+            bus.subscribe(
+                ev_type,
+                lambda name=name, **_: self._pending_events.append({"type": "event", "name": name})
+            )
+
+    def _on_game_over(self, winner_color, **_) -> None:
+        self._winner_name = self._usernames.get(winner_color, winner_color.name)
 
     async def _game_loop(self) -> None:
         while self._game is not None and not self._game.is_game_over:
@@ -171,11 +167,7 @@ class GameServer:
                 if self._game.is_game_over:
                     break
                 snap = self._game.get_game_snapshot()
-                elapsed = (
-                    _time.time() - self._game_start_time
-                    if self._game_start_time > 0.0 else 0.0
-                )
-                state_msg = json.dumps(snapshot_to_dict(snap, False, elapsed, ""))
+                state_msg = json.dumps(snapshot_to_dict(snap, self._game.game_start_time, ""))
                 events, self._pending_events = self._pending_events, []
             await self._broadcast(state_msg)
             for ev in events:
@@ -189,10 +181,7 @@ class GameServer:
 
     async def _send_final_state(self) -> None:
         snap = self._game.get_game_snapshot()
-        elapsed = (
-            _time.time() - self._game_start_time if self._game_start_time > 0.0 else 0.0
-        )
-        await self._broadcast(json.dumps(snapshot_to_dict(snap, True, elapsed, self._winner_name)))
+        await self._broadcast(json.dumps(snapshot_to_dict(snap, self._game.game_start_time, self._winner_name)))
         events, self._pending_events = self._pending_events, []
         for ev in events:
             await self._broadcast(json.dumps(ev))
@@ -206,15 +195,10 @@ class GameServer:
             return
         if self._game is None or self._game.is_game_over:
             return
-        from kungfu_chess.model.position import Position
         async with self._lock:
             if msg["type"] == "move":
-                if self._game_start_time == 0.0:
-                    self._game_start_time = _time.time()
                 self._game.request_move(Position(*msg["from"]), Position(*msg["to"]))
             elif msg["type"] == "jump":
-                if self._game_start_time == 0.0:
-                    self._game_start_time = _time.time()
                 self._game.handle_jump(Position(*msg["cell"]))
             elif msg["type"] == "legal_moves":
                 moves = self._game.get_legal_moves(Position(*msg["cell"]))

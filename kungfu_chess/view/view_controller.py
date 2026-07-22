@@ -2,12 +2,19 @@ import time
 import cv2
 from kungfu_chess.model.position import Position
 from kungfu_chess.shared.dto import MoveResult
-from kungfu_chess.shared.ui_constants import FEEDBACK_TTL
-from kungfu_chess.view.sound_player import play_error
+from kungfu_chess.shared.ui_constants import FEEDBACK_TTL, BOARD_CELLS
+from kungfu_chess.view.sound_player import play_error, _play as _play_sound
 
 _COLOR_OK      = (0, 220, 255)
 _COLOR_ERR     = (0, 0, 220)
 _COLOR_BLOCKED = (0, 140, 255)
+
+_EVENT_SOUNDS = {
+    "piece_moved":    "click.mp3",
+    "piece_captured": "eat.mp3",
+    "piece_jumped":   "jump.mp3",
+    "game_over":      "game_over.mp3",
+}
 
 
 class ViewController:
@@ -20,11 +27,24 @@ class ViewController:
         self.legal_moves: list = []
         self.feedback: tuple | None = None
 
+    def handle_events(self, events: list[dict]) -> None:
+        """Processes server events — triggers animations and plays sounds."""
+        for ev in events:
+            name = ev.get("name", "")
+            if name == "game_started":
+                self._view.start_timer()
+                self._view.trigger_game_start_animation()
+            elif name == "game_over":
+                self._view.trigger_game_over_animation()
+            sound = _EVENT_SOUNDS.get(name)
+            if sound:
+                _play_sound(sound)
+
     def on_mouse(self, event, mx: int, my: int) -> None:
         board_x, board_y, tile = self._view.get_board_offset()
         col = (mx - board_x) // tile
         row = (my - board_y) // tile
-        in_bounds = 0 <= row < 8 and 0 <= col < 8
+        in_bounds = 0 <= row < BOARD_CELLS and 0 <= col < BOARD_CELLS
         pos = Position(row, col) if in_bounds else None
 
         if event == cv2.EVENT_RBUTTONDOWN:

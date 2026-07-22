@@ -48,8 +48,6 @@ _FLASH_START_DURATION = 0.6
 _FLASH_OVER_DURATION = 0.8
 _FLASH_BORDER_THICKNESS = 6
 
-_WINDOW_TITLE = WINDOW_TITLE
-
 
 class ImageView(IRenderer):
     def __init__(self, sprite_loader: SpriteLoader = None, board_renderer: BoardRenderer = None):
@@ -64,7 +62,7 @@ class ImageView(IRenderer):
 
     def _scale(self) -> float:
         try:
-            rect = cv2.getWindowImageRect(_WINDOW_TITLE)
+            rect = cv2.getWindowImageRect(WINDOW_TITLE)
             if rect[2] > 0 and rect[3] > 0:
                 return min(rect[2] / _WIN_W, rect[3] / _WIN_H)
         except Exception:
@@ -82,6 +80,11 @@ class ImageView(IRenderer):
     def start_timer(self):
         if self._start_time is None:
             self._start_time = time.time()
+
+    def sync_timer(self, game_start_time: float) -> None:
+        """Align the local timer to the server's elapsed time."""
+        if self._start_time is None:
+            self._start_time = time.time() - game_start_time
 
     def reset_timer(self):
         self._start_time = None
@@ -123,39 +126,44 @@ class ImageView(IRenderer):
             canvas, self._loader.load_board_img(_BOARD_PX),
             self._board_x, self._board_y, board, TILE_SIZE, game_over
         )
+        self._draw_overlays(canvas, board, selected, legal_moves, feedback)
+        if game_over:
+            self._draw_game_over_screen(
+                canvas, winner_name or "",
+                black_name, black_score, white_name, white_score
+            )
+        self._draw_stopwatch(canvas)
+        self._draw_flash(canvas)
+        cv2.imshow(WINDOW_TITLE, self._scaled(canvas))
+
+    def _draw_overlays(self, canvas, board, selected, legal_moves, feedback) -> None:
         if legal_moves:
             self._draw_legal_moves(canvas, board, legal_moves)
         if selected is not None:
             self._draw_selection(canvas, selected)
         if feedback is not None:
             self._draw_feedback(canvas, feedback)
-        if game_over:
-            if self._stop_time is None:
-                self._stop_time = time.time() if self._start_time is not None else None
-            elapsed = int((self._stop_time or 0) - (self._start_time or 0))
-            self._draw_game_over(
-                canvas, winner_name or "",
-                black_name, black_score, white_name, white_score, elapsed
-            )
-        self._draw_stopwatch(canvas)
-        self._draw_flash(canvas)
+
+    def _draw_game_over_screen(self, canvas, winner_name,
+                               black_name, black_score, white_name, white_score) -> None:
+        if self._stop_time is None:
+            self._stop_time = time.time() if self._start_time is not None else None
+        elapsed = int((self._stop_time or 0) - (self._start_time or 0))
+        self._draw_game_over(canvas, winner_name, black_name, black_score,
+                             white_name, white_score, elapsed)
+
+    def _scaled(self, canvas):
         s = self._scale()
-        if s != 1.0:
-            display = cv2.resize(
-                canvas,
-                (int(_WIN_W * s), int(_WIN_H * s)),
-                interpolation=cv2.INTER_LINEAR
-            )
-        else:
-            display = canvas
-        cv2.imshow(_WINDOW_TITLE, display)
+        if s == 1.0:
+            return canvas
+        return cv2.resize(canvas, (int(_WIN_W * s), int(_WIN_H * s)),
+                          interpolation=cv2.INTER_LINEAR)
 
     def _draw_flash(self, canvas):
         remaining = self._flash_until - time.time()
         if remaining <= 0:
             return
-        # Fade from full brightness to zero over the duration
-        alpha = remaining / self._flash_duration  # 1.0 → 0.0
+        alpha = remaining / self._flash_duration
         thickness = max(2, int(_FLASH_BORDER_THICKNESS * alpha))
         cv2.rectangle(canvas, (2, 2), (_WIN_W - 2, _WIN_H - 2), self._flash_color, thickness)
 
@@ -169,19 +177,6 @@ class ImageView(IRenderer):
         cv2.putText(canvas, txt,
                     (_WIN_W // 2 - tw // 2, TOP_BAR // 2 + th // 2),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.4, _TEXT_LIGHT, 2, cv2.LINE_AA)
-
-    @staticmethod
-    def _get_scale(win_w: int, win_h: int) -> float:
-        try:
-            import tkinter as tk
-            root = tk.Tk()
-            root.withdraw()
-            sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-            root.destroy()
-        except Exception:
-            return 1.0
-        margin = 0.9
-        return min(sw * margin / win_w, sh * margin / win_h, 1.0)
 
     def _draw_panels(self, canvas, black_name, black_score, black_moves, black_captured,
                      white_name, white_score, white_moves, white_captured,
@@ -233,30 +228,26 @@ class ImageView(IRenderer):
 
     def _draw_game_over(self, canvas, winner_name,
                         black_name, black_score, white_name, white_score, elapsed_secs):
+        self._draw_dim_overlay(canvas)
+        cy = _WIN_H // 2 - 90
+        dur = f"{elapsed_secs // 60:02}:{elapsed_secs % 60:02}"
+        scores = f"{black_name}  {black_score} pts      {white_name}  {white_score} pts"
+        lines = [
+            ("GAME OVER",                         _FONT_LARGE, _FONT_THICK_LARGE, _COLOR_GAME_OVER),
+            (f"{winner_name} wins!",               _FONT_MED,   _FONT_THICK_MED,   _COLOR_WINNER),
+            (f"Game duration:  {dur}",             _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY),
+            (scores,                              _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY),
+            ("Press R to restart  |  ESC to exit", _FONT_SMALL, _FONT_THICK_SMALL, _TEXT_LIGHT),
+        ]
+        gaps = [0, 70, 44, 30, 44]
+        for (txt, scale, thick, color), gap in zip(lines, gaps):
+            cy += gap
+            self._put_centered(canvas, txt, cy, scale, thick, color)
+
+    def _draw_dim_overlay(self, canvas) -> None:
         overlay = canvas.copy()
         cv2.rectangle(overlay, (0, 0), (_WIN_W, _WIN_H), _COLOR_OVERLAY, -1)
         cv2.addWeighted(overlay, _OVERLAY_ALPHA, canvas, 1 - _OVERLAY_ALPHA, 0, canvas)
-
-        cy = _WIN_H // 2 - 90
-        self._put_centered(
-            canvas, "GAME OVER", cy, _FONT_LARGE, _FONT_THICK_LARGE, _COLOR_GAME_OVER
-        )
-        cy += 70
-        self._put_centered(
-            canvas, f"{winner_name} wins!", cy, _FONT_MED, _FONT_THICK_MED, _COLOR_WINNER
-        )
-        cy += 44
-        mins, secs = elapsed_secs // 60, elapsed_secs % 60
-        self._put_centered(
-            canvas, f"Game duration:  {mins:02}:{secs:02}",
-            cy, _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY
-        )
-        cy += 30
-        summary = f"{black_name}  {black_score} pts      {white_name}  {white_score} pts"
-        self._put_centered(canvas, summary, cy, _FONT_SMALL, _FONT_THICK_SMALL, _COLOR_SUMMARY)
-        cy += 44
-        self._put_centered(canvas, "Press R to restart  |  ESC to exit",
-                           cy, _FONT_SMALL, _FONT_THICK_SMALL, _TEXT_LIGHT)
 
     @staticmethod
     def _put_centered(canvas, txt, cy, scale, thick, color):

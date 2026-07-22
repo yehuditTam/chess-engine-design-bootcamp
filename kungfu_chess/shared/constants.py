@@ -25,3 +25,4 @@ class PieceState(Enum):
     MOVING   = 'moving'
     CAPTURED = 'captured'
     COOLING  = 'cooling'
+    AIRBORNE = 'airborne'

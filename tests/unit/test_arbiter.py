@@ -78,17 +78,87 @@ class TestMovingPieceNone:
         move.arrive_at = arbiter._now() - 1
         # Remove the piece manually to simulate it already being gone
         board.remove_piece(0, 0)
-        completed, jump_captures, target, _ = arbiter.execute_pending_moves()
+        completed, jump_captures, target = arbiter.execute_pending_moves()
         assert completed == []
         assert target is None
         assert move not in arbiter.pending_moves
 
 
 # ---------------------------------------------------------------------------
-# _resolve_move_with_info — friendly piece at destination (lines 148-150)
+# moving_color() — all pending pieces are None on the board (line 92)
 # ---------------------------------------------------------------------------
 
-class TestFriendlyAtDestination:
+class TestMovingColorNone:
+    def test_moving_color_returns_none_when_piece_gone(self):
+        board = Board([['wR', '.']])
+        arbiter = RealTimeArbiter(board)
+        arbiter.schedule_move(p(0, 0), p(0, 1))
+        board.remove_piece(0, 0)  # piece vanishes mid-flight
+        assert arbiter.moving_color() is None
+
+
+# ---------------------------------------------------------------------------
+# _compute_actual_end — path reaches end without any block (line 124)
+# ---------------------------------------------------------------------------
+
+class TestComputeActualEndNoBlock:
+    def test_unblocked_path_returns_original_end(self):
+        board = Board([['wR', '.', '.']])
+        arbiter = RealTimeArbiter(board)
+        arbiter.schedule_move(p(0, 0), p(0, 2))
+        move = arbiter.pending_moves[0]
+        assert move.end == p(0, 2)
+
+
+# ---------------------------------------------------------------------------
+# _is_blocked_by_friendly — other_piece is None (line 131)
+# ---------------------------------------------------------------------------
+
+class TestIsBlockedOtherPieceNone:
+    def test_none_piece_in_pending_does_not_block(self):
+        """A stale PendingMove whose piece is gone should not block other pieces."""
+        board = Board([['wR', '.', 'wQ']])
+        arbiter = RealTimeArbiter(board)
+        # Manually inject a stale move whose piece no longer exists on the board
+        stale = PendingMove(p(0, 2), p(0, 1), arbiter._now() + 10)
+        arbiter.pending_moves.append(stale)
+        board.remove_piece(0, 2)  # piece is gone
+        # Now schedule wR — the stale move should be skipped (other_piece is None)
+        arbiter.schedule_move(p(0, 0), p(0, 1))
+        rook_move = next(m for m in arbiter.pending_moves if m.start == p(0, 0))
+        assert rook_move.end == p(0, 1)  # not blocked by the None piece
+
+
+# ---------------------------------------------------------------------------
+# _will_occupy_before — other.end != cell (line 153)
+# ---------------------------------------------------------------------------
+
+class TestWillOccupyBeforeEndNotCell:
+    def test_other_end_differs_from_cell_returns_false(self):
+        board = Board([['wR', '.', 'wQ', '.']])
+        arbiter = RealTimeArbiter(board)
+        # wQ moves to col=3, wR moves to col=1 — wQ's end (col=3) != wR's target (col=1)
+        arbiter.schedule_move(p(0, 2), p(0, 3))
+        arbiter.schedule_move(p(0, 0), p(0, 1))
+        rook_move = next(m for m in arbiter.pending_moves if m.start == p(0, 0))
+        assert rook_move.end == p(0, 1)  # not blocked
+
+
+# ---------------------------------------------------------------------------
+# _check_jump_capture — destination not airborne (line 177)
+# ---------------------------------------------------------------------------
+
+class TestCheckJumpCaptureNotAirborne:
+    def test_non_airborne_destination_returns_none(self):
+        board = Board([['wR', 'bR', '.']])
+        arbiter = RealTimeArbiter(board)
+        arbiter.schedule_move(p(0, 0), p(0, 1))
+        move = arbiter.pending_moves[0]
+        move.arrive_at = arbiter._now() - 1
+        # No jump scheduled — destination is not airborne
+        result = arbiter._check_jump_capture(move)
+        assert result is None
+
     def test_friendly_at_dest_cancels_move(self):
         """If a friendly piece is at the destination when the move resolves,
         the moving piece returns to IDLE and the move is discarded."""
@@ -97,7 +167,7 @@ class TestFriendlyAtDestination:
         # Force a move from (0,0) to (0,1) where wQ already sits
         move = PendingMove(p(0, 0), p(0, 1), arbiter._now() - 1)
         arbiter.pending_moves.append(move)
-        completed, _, target, _ = arbiter.execute_pending_moves()
+        completed, _, target = arbiter.execute_pending_moves()
         assert completed == []
         assert target is None
         rook = board.get_piece(0, 0)

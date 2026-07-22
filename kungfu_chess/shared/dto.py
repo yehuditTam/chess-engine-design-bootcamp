@@ -8,9 +8,7 @@ from kungfu_chess.shared.constants import PieceType, Color, PieceState
 class PieceSnapshot:
     color: Color
     ptype: PieceType
-    is_cooling: bool = False
     state: PieceState = PieceState.IDLE
-    is_airborne: bool = False
     cooldown_ends_at: float = 0.0
     cooldown_started_at: float = 0.0
     jump_started_at: float = 0.0
@@ -46,3 +44,4 @@ class GameSnapshot:
     board: BoardSnapshot
     black: PlayerSnapshot
     white: PlayerSnapshot
+    game_over: bool = False

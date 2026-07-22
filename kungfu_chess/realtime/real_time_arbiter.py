@@ -1,4 +1,5 @@
 import time
+from kungfu_chess.shared.constants import Color
 from kungfu_chess.realtime.motion import PendingMove, PendingJump, PendingCooldown
 from kungfu_chess.shared.constants import (
     JUMP_DURATION_SECONDS, MOVE_DELAY_SECONDS, COOLDOWN_SECONDS, PieceType, PieceState
@@ -34,14 +35,23 @@ class RealTimeArbiter:
     def is_airborne(self, cell: Position) -> bool:
         return any(j.cell == cell for j in self.pending_jumps)
 
-    def moving_colors(self) -> set:
-        """Returns the set of colors that currently have pieces in motion."""
-        colors = set()
+    def cooldown_times(self, cell: Position) -> tuple:
+        """Returns (ready_at, started_at) for the cooldown at cell, or (0.0, 0.0)."""
+        cd = next((c for c in self.pending_cooldowns if c.cell == cell), None)
+        return (cd.ready_at, cd.started_at) if cd else (0.0, 0.0)
+
+    def jump_started_at(self, cell: Position) -> float:
+        """Returns jump started_at for the jump at cell, or 0.0."""
+        j = next((j for j in self.pending_jumps if j.cell == cell), None)
+        return j.started_at if j else 0.0
+
+    def moving_color(self) -> Color | None:
+        """Returns the color that currently has pieces in motion, or None."""
         for move in self.pending_moves:
             piece = self._board.get_piece(*move.start)
             if piece is not None:
-                colors.add(piece.color)
-        return colors
+                return piece.color
+        return None
 
     # --- scheduling ---
 
@@ -67,14 +77,13 @@ class RealTimeArbiter:
     def execute_pending_moves(self) -> tuple:
         """
         Resolves all moves whose arrive_at has passed.
-        Returns (completed, jump_captures, game_over_target, arrived_ends).
+        Returns (completed, jump_captures, game_over_target).
           completed:     list of (start, end, ptype, color, captured_ptype)
           jump_captures: list of (jumper_color, captured_ptype)
           game_over_target: the captured King piece, or None
-          arrived_ends:  list of destination Positions that were filled this tick
         """
         now = self._now()
-        completed, jump_captures, arrived_ends = [], [], []
+        completed, jump_captures = [], []
 
         for move in sorted(self.pending_moves, key=lambda m: m.arrive_at):
             if now < move.arrive_at:
@@ -87,27 +96,24 @@ class RealTimeArbiter:
                 jump_captures.append(jump_capture)
                 continue
 
-            info, game_over_target, end = self._resolve_move(move)
+            info, game_over_target = self._resolve_move(move)
             if info is not None:
                 completed.append(info)
-            if end is not None:
-                arrived_ends.append(end)
             if game_over_target is not None:
                 self._expire_jumps(now)
-                return completed, jump_captures, game_over_target, arrived_ends
+                return completed, jump_captures, game_over_target
 
         self._expire_jumps(now)
         self._expire_cooldowns(now)
-        return completed, jump_captures, None, arrived_ends
+        return completed, jump_captures, None
 
     # --- friendly-blocking path computation ---
 
     def _compute_actual_end(self, start: Position, end: Position, piece, now: float) -> Position:
-        """Walks the path step by step and stops one square before a friendly destination."""
+        """Walks the path and stops one square before a friendly destination."""
         dr, dc = start.direction_to(end)
         curr = Position(start.row + dr, start.col + dc)
-        step = 1
-        while True:
+        for step in range(1, max(abs(end.row - start.row), abs(end.col - start.col)) + 1):
             arrive_here = now + step * MOVE_DELAY_SECONDS
             if self._is_blocked_by_friendly(piece, curr, arrive_here, now):
                 prev = Position(curr.row - dr, curr.col - dc)
@@ -115,7 +121,7 @@ class RealTimeArbiter:
             if curr == end:
                 return end
             curr = Position(curr.row + dr, curr.col + dc)
-            step += 1
+        return end
 
     def _is_blocked_by_friendly(self, piece, cell: Position,
                                  arrive_here: float, now: float) -> bool:
@@ -132,16 +138,19 @@ class RealTimeArbiter:
         """True if `other` will permanently occupy `cell` before `arrive_here`."""
         if other.end != cell:
             return False
-        odr, odc = other.start.direction_to(other.end)
-        ocurr = Position(other.start.row + odr, other.start.col + odc)
-        step = 1
-        while True:
-            if ocurr == cell and now + step * MOVE_DELAY_SECONDS <= arrive_here:
+        dr, dc = other.start.direction_to(other.end)
+        curr = Position(other.start.row + dr, other.start.col + dc)
+        dr_steps = max(
+            abs(other.end.row - other.start.row),
+            abs(other.end.col - other.start.col)
+        )
+        for step in range(1, dr_steps + 1):
+            if curr == cell and now + step * MOVE_DELAY_SECONDS <= arrive_here:
                 return True
-            if ocurr == other.end:
+            if curr == other.end:
                 return False
-            ocurr = Position(ocurr.row + odr, ocurr.col + odc)
-            step += 1
+            curr = Position(curr.row + dr, curr.col + dc)
+        return False
 
     # --- move resolution ---
 
@@ -161,19 +170,18 @@ class RealTimeArbiter:
         return None
 
     def _resolve_move(self, move: PendingMove) -> tuple:
-        """Commits the move to the board. Returns (info, game_over_target, end)."""
+        """Commits the move to the board. Returns (info, game_over_target)."""
         moving_piece = self._board.get_piece(*move.start)
         if moving_piece is None:
             if move in self.pending_moves:
                 self.pending_moves.remove(move)
-            return None, None, None
+            return None, None
 
         target = self._board.get_piece(*move.end)
         if target is not None and target.color == moving_piece.color:
-            # Friendly piece arrived first — cancel this move
             moving_piece.set_state(PieceState.IDLE)
             self.pending_moves.remove(move)
-            return None, None, None
+            return None, None
 
         return self._commit_move(move, moving_piece, target)
 
@@ -192,8 +200,8 @@ class RealTimeArbiter:
             target.set_state(PieceState.CAPTURED)
             if target.ptype == PieceType.KING:
                 self.pending_moves.clear()
-                return info, target, move.end
-        return info, None, move.end
+                return info, target
+        return info, None
 
     # --- expiry ---
 
